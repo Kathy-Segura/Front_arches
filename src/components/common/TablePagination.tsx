@@ -32,10 +32,11 @@ export function TablePagination({ total, page, pageSize = 10, onPageChange, onPa
         <span>Filas por página</span>
         <Select
           defaultValue={String(pageSize)}
-          value={controlado ? String(pageSize) : undefined}
-          onValueChange={(v) => onPageSizeChange?.(Number(v))}
+          {...(controlado
+            ? { value: String(pageSize), onValueChange: (v: string) => onPageSizeChange?.(Number(v)) }
+            : {})}
         >
-          <SelectTrigger className="h-8 w-[74px]">
+          <SelectTrigger className="h-8 w-18.5">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
