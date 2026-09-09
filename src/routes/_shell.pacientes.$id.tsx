@@ -27,10 +27,11 @@ import {
 } from "@/lib/api/antecedentes";
 import type { PacienteDTO, ContactoEmergenciaDTO, AntecedenteDTO, PacienteInput } from "@/types/paciente";
 
-export const Route = createFileRoute("/_shell/pacientes/$id")({
-  validateSearch: (search: Record<string, unknown>) => ({
+  export const Route = createFileRoute("/_shell/pacientes/$id")({
+  validateSearch: (search: { edit?: unknown }) => ({
     edit: search.edit === true || search.edit === "true",
   }),
+
   loader: async ({ params }) => {
     const idPaciente = Number(params.id);
     if (Number.isNaN(idPaciente)) throw notFound();
@@ -100,18 +101,31 @@ function DetallePaciente() {
   async function handleGuardarDatos() {
     setGuardando(true);
     try {
-      const actualizado = await actualizarPaciente(paciente.idPaciente, form);
+      const ocupacion = (form.ocupacion ?? "").trim();
+      const direccion = (form.direccion ?? "").trim();
+      const correo = (form.correo ?? "").trim();
+
+      const actualizado = await actualizarPaciente(paciente.idPaciente, {
+        nombreCompleto: form.nombreCompleto.trim(),
+        cedula: form.cedula.trim(),
+        fechaNacimiento: form.fechaNacimiento,
+        sexo: form.sexo,
+        telefono: form.telefono.trim(),
+        ...(ocupacion && { ocupacion }),
+        ...(direccion && { direccion }),
+        ...(correo && { correo }),
+      });
+
       setPaciente((prev) => ({ ...prev, ...actualizado }));
       setEditMode(false);
       toast.success("Datos del paciente actualizados");
-      // Limpia el ?edit=true de la URL si vino desde el listado
-      router.navigate({ to: "/pacientes/$id", params: { id: String(paciente.idPaciente) }, search: {} });
+      router.navigate({ to: "/pacientes/$id", params: { id: String(paciente.idPaciente) }, search: { edit: false } });
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "No se pudo actualizar el paciente");
     } finally {
       setGuardando(false);
     }
-  }
+}
 
   return (
     <>
@@ -637,4 +651,4 @@ function AntecedentesCard({
       </CardContent>
     </Card>
   );
-}
+ }

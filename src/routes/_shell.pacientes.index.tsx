@@ -13,6 +13,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Sheet,
@@ -64,10 +65,11 @@ function Campo({ label, required, children }: { label: string; required?: boolea
 // por separado. Este helper intenta separarlos; si no reconoce el patrón,
 // guarda todo como nombre y deja el teléfono vacío (se puede completar luego
 // desde la pestaña "Contactos" en el detalle del paciente).
+
 function parseContactoEmergencia(texto: string): { nombreContacto: string; telefono: string } {
-  const partes = texto.split("—").map((p) => p.trim());
-  if (partes.length === 2) {
-    return { nombreContacto: partes[0], telefono: partes[1] };
+  const [nombre, tel] = texto.split("—").map((p) => p.trim());
+  if (nombre !== undefined && tel !== undefined) {
+    return { nombreContacto: nombre, telefono: tel };
   }
   return { nombreContacto: texto.trim(), telefono: "" };
 }
@@ -194,18 +196,23 @@ function Pacientes() {
       return;
     }
 
-    setGuardando(true);
+  setGuardando(true);
     try {
+      const ocupacion = form.ocupacion.trim();
+      const direccion = form.direccion.trim();
+      const correo = form.correo.trim();
+
       const nuevo = await crearPaciente({
         nombreCompleto: form.nombreCompleto.trim(),
         cedula: form.cedula.trim(),
         fechaNacimiento: form.fechaNacimiento,
         sexo: form.sexo,
-        ocupacion: form.ocupacion.trim() || undefined,
-        direccion: form.direccion.trim() || undefined,
         telefono: form.telefono.trim(),
-        correo: form.correo.trim() || undefined,
+        ...(ocupacion && { ocupacion }),
+        ...(direccion && { direccion }),
+        ...(correo && { correo }),
       });
+
 
       // Contacto de emergencia rápido (opcional)
       if (form.contactoEmergencia.trim()) {
@@ -328,10 +335,12 @@ function Pacientes() {
                       <Link
                         to="/pacientes/$id"
                         params={{ id: String(p.idPaciente) }}
+                        search={{ edit: false }}   // agregar que el edit sea opcional
                         className="hover:text-primary hover:underline"
                       >
                         {p.nombreCompleto}
                       </Link>
+
                       <span className="block text-xs text-muted-foreground">
                         P-{String(p.idPaciente).padStart(4, "0")}
                       </span>
