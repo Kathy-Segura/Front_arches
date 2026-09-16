@@ -72,3 +72,22 @@ export interface ListarPacientesParams {
   page?: number;
   size?: number;
 }
+
+export type TipoAntecedente =
+  | "alergia"
+  | "enfermedad_cronica"
+  | "medicamento_actual"
+  | "antecedente_familiar"
+  | "otro";
+
+export const OPCIONES_ANTECEDENTE: { value: TipoAntecedente; label: string }[] = [
+  { value: "alergia", label: "Alergia" },
+  { value: "enfermedad_cronica", label: "Enfermedad crónica" },
+  { value: "medicamento_actual", label: "Medicamento actual" },
+  { value: "antecedente_familiar", label: "Antecedente familiar" },
+  { value: "otro", label: "Otro" },
+];
+
+export function labelAntecedente(tipo: string): string {
+  return OPCIONES_ANTECEDENTE.find((o) => o.value === tipo)?.label ?? tipo;
+}
