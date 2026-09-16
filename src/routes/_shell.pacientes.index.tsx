@@ -222,10 +222,10 @@ function Pacientes() {
 
       // Antecedentes rápidos (opcionales) — cada campo no vacío se guarda como un antecedente independiente
       const antecedentesRapidos: Array<[string, string]> = [
-        ["Alergias", form.alergias],
-        ["Enfermedades crónicas", form.cronicas],
-        ["Medicamentos actuales", form.medicamentos],
-        ["Antecedentes familiares", form.familiares],
+        ["alergia", form.alergias],
+        ["enfermedad_cronica", form.cronicas],
+        ["medicamento_actual", form.medicamentos],
+        ["antecedente_familiar", form.familiares],
       ];
       for (const [tipo, descripcion] of antecedentesRapidos) {
         if (descripcion.trim()) {

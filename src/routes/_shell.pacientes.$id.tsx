@@ -26,6 +26,8 @@ import {
   eliminarAntecedente,
 } from "@/lib/api/antecedentes";
 import type { PacienteDTO, ContactoEmergenciaDTO, AntecedenteDTO, PacienteInput } from "@/types/paciente";
+import { AntecedenteTipoSelect } from "@/components/ui/AntecedenteTipoSelect";
+import { labelAntecedente } from "@/types/paciente";
 
   export const Route = createFileRoute("/_shell/pacientes/$id")({
   validateSearch: (search: { edit?: unknown }) => ({
@@ -527,7 +529,7 @@ function ContactosCard({
 
 // ---------------------------------------------------------------------------
 // Antecedentes: lista + alta/edición/baja contra el backend real
-// ---------------------------------------------------------------------------
+// --------------------------------------------------------------------------
 function AntecedentesCard({
   idPaciente,
   antecedentes,
@@ -539,17 +541,17 @@ function AntecedentesCard({
 }) {
   const [agregando, setAgregando] = useState(false);
   const [editandoId, setEditandoId] = useState<number | null>(null);
-  const [form, setForm] = useState({ tipoAntecedente: "", descripcion: "" });
+  const [form, setForm] = useState({ tipoAntecedente: "", otroDetalle: "", descripcion: "" });
   const [guardando, setGuardando] = useState(false);
 
   function abrirNuevo() {
-    setForm({ tipoAntecedente: "", descripcion: "" });
+    setForm({ tipoAntecedente: "", otroDetalle: "", descripcion: "" });
     setEditandoId(null);
     setAgregando(true);
   }
 
   function abrirEdicion(a: AntecedenteDTO) {
-    setForm({ tipoAntecedente: a.tipoAntecedente, descripcion: a.descripcion });
+    setForm({ tipoAntecedente: a.tipoAntecedente, otroDetalle: "", descripcion: a.descripcion });
     setEditandoId(a.idAntecedente);
     setAgregando(true);
   }
@@ -559,12 +561,23 @@ function AntecedentesCard({
       toast.error("Tipo y descripción son obligatorios");
       return;
     }
+    if (form.tipoAntecedente === "otro" && !form.otroDetalle.trim()) {
+      toast.error("Especifique el tipo de antecedente en el campo 'Otro'");
+      return;
+    }
+
+    const descripcionFinal =
+      form.tipoAntecedente === "otro"
+        ? `${form.otroDetalle.trim()}: ${form.descripcion.trim()}`
+        : form.descripcion.trim();
+
     setGuardando(true);
     try {
+      const payload = { tipoAntecedente: form.tipoAntecedente, descripcion: descripcionFinal };
       if (editandoId) {
-        await actualizarAntecedente(idPaciente, editandoId, form);
+        await actualizarAntecedente(idPaciente, editandoId, payload);
       } else {
-        await crearAntecedente(idPaciente, form);
+        await crearAntecedente(idPaciente, payload);
       }
       setAgregando(false);
       await onChange();
@@ -606,7 +619,7 @@ function AntecedentesCard({
             className="flex items-start justify-between gap-3 rounded-lg border border-border p-3"
           >
             <div className="min-w-0">
-              <p className="text-sm font-medium">{a.tipoAntecedente}</p>
+              <p className="text-sm font-medium">{labelAntecedente(a.tipoAntecedente)}</p>
               <p className="text-sm text-muted-foreground">{a.descripcion}</p>
             </div>
             <div className="flex shrink-0 items-center gap-1">
@@ -627,10 +640,11 @@ function AntecedentesCard({
 
         {agregando && (
           <div className="space-y-3 rounded-lg border border-dashed border-border p-3">
-            <Input
-              placeholder="Tipo (ej. Alergias, Enfermedad crónica)"
-              value={form.tipoAntecedente}
-              onChange={(e) => setForm((f) => ({ ...f, tipoAntecedente: e.target.value }))}
+            <AntecedenteTipoSelect
+              tipo={form.tipoAntecedente}
+              otroDetalle={form.otroDetalle}
+              onTipoChange={(v) => setForm((f) => ({ ...f, tipoAntecedente: v }))}
+              onOtroDetalleChange={(v) => setForm((f) => ({ ...f, otroDetalle: v }))}
             />
             <Textarea
               rows={2}
@@ -651,4 +665,4 @@ function AntecedentesCard({
       </CardContent>
     </Card>
   );
- }
+}

@@ -5,7 +5,8 @@
 // Ajusta VITE_API_BASE_URL en tu .env si el backend no corre en localhost:8080.
 //   VITE_API_BASE_URL=http://localhost:8080
 
-const API_BASE_URL = import.meta.env.BASE_URL ?? "http://localhost:8081";
+//const API_BASE_URL = import.meta.env.BASE_URL ?? "http://localhost:8081";
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8081";
 
 export class ApiError extends Error {
   status: number;
