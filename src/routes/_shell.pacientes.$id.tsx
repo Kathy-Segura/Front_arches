@@ -26,7 +26,7 @@ import {
   eliminarAntecedente,
 } from "@/lib/api/antecedentes";
 import type { PacienteDTO, ContactoEmergenciaDTO, AntecedenteDTO, PacienteInput } from "@/types/paciente";
-import { AntecedenteTipoSelect } from "@/components/ui/AntecedenteTipoSelect";
+import { AntecedenteTipoSelect } from "@/components/ui/antecedenteTipoSelect";
 import { labelAntecedente } from "@/types/paciente";
 
   export const Route = createFileRoute("/_shell/pacientes/$id")({

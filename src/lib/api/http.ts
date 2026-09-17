@@ -84,4 +84,3 @@ export function buildQueryString(params: Record<string, string | number | undefi
   const qs = usp.toString();
   return qs ? `?${qs}` : "";
 }
-
