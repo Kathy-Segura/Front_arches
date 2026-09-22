@@ -44,23 +44,6 @@ export function RowActions({ label, viewTo, viewParams, onView, onEdit, onPrint,
 
   return (
     <div className="flex items-center justify-end gap-0.5">
-      {viewTo ? (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button asChild variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-primary">
-              {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-              <Link to={viewTo as any} params={viewParams as any}>
-                <Eye className="h-4 w-4" />
-              </Link>
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>Ver</TooltipContent>
-        </Tooltip>
-      ) : (
-        <IconBtn title="Ver" onClick={() => (onView ? onView() : toast.info(`Vista de detalle: ${label}`))}>
-          <Eye className="h-4 w-4" />
-        </IconBtn>
-      )}
       <IconBtn title="Editar" onClick={() => (onEdit ? onEdit() : toast.info(`Editando ${label}`))}>
         <Pencil className="h-4 w-4" />
       </IconBtn>
