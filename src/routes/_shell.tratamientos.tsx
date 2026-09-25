@@ -1,5 +1,7 @@
+// src/routes/_shell/tratamientos.tsx
+
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Plus } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/layout/PageHeader";
@@ -17,7 +19,20 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { odontologos, pacientes, procedimientos, tratamientos } from "@/lib/mock-data";
+import type { TratamientoDTO, TratamientoRequestDTO } from "@/types/tratamiento";
+import {
+  listarTratamientos,
+  obtenerTratamiento,
+  crearTratamiento,
+  actualizarTratamiento,
+  registrarSesion,
+} from "@/lib/api/tratamientos";
+import { listarPacientes } from "@/lib/api/pacientes";
+import type { PacienteDTO } from "@/types/paciente";
+import { listarProcedimientos } from "@/lib/api/procedimientos";
+import type { ProcedimientoDTO } from "@/types/procedimiento";
+import { listarOdontologos } from "@/lib/api/personal";
+import type { PersonalDTO } from "@/types/personal";
 
 export const Route = createFileRoute("/_shell/tratamientos")({
   head: () => ({
@@ -31,14 +46,161 @@ export const Route = createFileRoute("/_shell/tratamientos")({
   component: Tratamientos,
 });
 
-const sesiones = [
-  { fecha: "12/07/2026", nota: "Apertura cameral y drenaje.", odontologo: "Dr. Carlos Talavera" },
-  { fecha: "28/07/2026", nota: "Instrumentación de conductos y medicación.", odontologo: "Dr. Carlos Talavera" },
-];
+const AVANCES = ["propuesto", "pendiente", "en_proceso", "completado"] as const;
+const PAGOS = ["pendiente", "parcial", "pagado"] as const;
+
+const emptyForm: TratamientoRequestDTO = {
+  idPaciente: 0,
+  idProcedimiento: 0,
+  idPersonal: 0,
+  fechaProgramada: "",
+  costoTotal: 0,
+  sesionesPlanificadas: 1,
+  notas: "",
+};
 
 function Tratamientos() {
+  // Catálogos de apoyo (una sola carga) para resolver nombre y poblar los Select
+  const [pacientes, setPacientes] = useState<PacienteDTO[]>([]);
+  const [procedimientos, setProcedimientos] = useState<ProcedimientoDTO[]>([]);
+  const [odontologos, setOdontologos] = useState<PersonalDTO[]>([]);
+
+  useEffect(() => {
+    // listarPacientes es paginado (PageResponse<PacienteDTO>); pedimos un
+    // tamaño amplio para poblar el selector. Si la clínica llega a tener
+    // más de 200 pacientes activos, conviene un endpoint dedicado sin
+    // paginar (ej. /api/pacientes/opciones) en vez de subir este número.
+    listarPacientes({ size: 200 })
+      .then((res) => setPacientes(res.content))
+      .catch(() => toast.error("No se pudo cargar la lista de pacientes"));
+    listarProcedimientos().then(setProcedimientos).catch(() => toast.error("No se pudo cargar la lista de procedimientos"));
+    listarOdontologos().then(setOdontologos).catch(() => toast.error("No se pudo cargar la lista de odontólogos"));
+  }, []);
+
+  const nombrePaciente = useMemo(() => {
+    const mapa = new Map(pacientes.map((p) => [p.idPaciente, p.nombreCompleto]));
+    return (id: number) => mapa.get(id) ?? `Paciente #${id}`;
+  }, [pacientes]);
+
+  const nombreProcedimiento = useMemo(() => {
+    const mapa = new Map(procedimientos.map((p) => [p.idProcedimiento, p.nombreProcedimiento]));
+    return (id: number) => mapa.get(id) ?? `Procedimiento #${id}`;
+  }, [procedimientos]);
+
+  // Listado
+  const [filas, setFilas] = useState<TratamientoDTO[]>([]);
+  const [cargando, setCargando] = useState(true);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = useState(10);
+  const [idPacienteFiltro, setIdPacienteFiltro] = useState<number | undefined>();
+  const [avanceFiltro, setAvanceFiltro] = useState<string | undefined>();
+  const [pagoFiltro, setPagoFiltro] = useState<string | undefined>();
+
+  const cargar = async () => {
+    setCargando(true);
+    try {
+      const resultado = await listarTratamientos({
+        idPaciente: idPacienteFiltro,
+        estadoAvance: avanceFiltro,
+        estadoPago: pagoFiltro,
+        page,
+        size: pageSize,
+      });
+      setFilas(resultado.contenido);
+      setTotal(resultado.totalElementos);
+    } catch (error) {
+      toast.error("No se pudo cargar los tratamientos");
+    } finally {
+      setCargando(false);
+    }
+  };
+
+  useEffect(() => {
+    cargar();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page, pageSize, idPacienteFiltro, avanceFiltro, pagoFiltro]);
+
+  // Formulario (asignar / editar)
   const [open, setOpen] = useState(false);
-  const [detalle, setDetalle] = useState<(typeof tratamientos)[number] | null>(null);
+  const [editandoId, setEditandoId] = useState<number | null>(null);
+  const [form, setForm] = useState<TratamientoRequestDTO>(emptyForm);
+  const [guardando, setGuardando] = useState(false);
+
+  const abrirNuevo = () => {
+    setEditandoId(null);
+    setForm(emptyForm);
+    setOpen(true);
+  };
+
+  const abrirEdicion = (t: TratamientoDTO) => {
+    setEditandoId(t.idTratamiento);
+    setForm({
+      idPaciente: t.idPaciente,
+      idProcedimiento: t.idProcedimiento,
+      idPersonal: t.idPersonal,
+      fechaProgramada: t.fechaProgramada ?? "",
+      costoTotal: t.costoTotal,
+      sesionesPlanificadas: t.sesionesPlanificadas,
+      notas: t.notas ?? "",
+      estadoAvance: t.estadoAvance,
+      estadoPago: t.estadoPago,
+    });
+    setOpen(true);
+  };
+
+  const guardar = async () => {
+    if (!form.idPaciente || !form.idProcedimiento || !form.idPersonal || !form.costoTotal) {
+      toast.error("Completa los campos obligatorios");
+      return;
+    }
+    setGuardando(true);
+    try {
+      if (editandoId) {
+        await actualizarTratamiento(editandoId, form);
+        toast.success("Tratamiento actualizado correctamente");
+      } else {
+        await crearTratamiento(form);
+        toast.success("Tratamiento asignado correctamente");
+      }
+      setOpen(false);
+      cargar();
+    } catch (error) {
+      toast.error("No se pudo guardar el tratamiento");
+    } finally {
+      setGuardando(false);
+    }
+  };
+
+  // Detalle + registrar sesión de avance
+  const [detalle, setDetalle] = useState<TratamientoDTO | null>(null);
+  const [nuevaSesion, setNuevaSesion] = useState("");
+  const [guardandoSesion, setGuardandoSesion] = useState(false);
+
+  const verDetalle = async (id: number) => {
+    try {
+      const data = await obtenerTratamiento(id);
+      setDetalle(data);
+    } catch (error) {
+      toast.error("No se pudo cargar el detalle");
+    }
+  };
+
+  const guardarSesion = async () => {
+    if (!detalle || !nuevaSesion.trim()) return;
+    setGuardandoSesion(true);
+    try {
+      const actualizado = await registrarSesion(detalle.idTratamiento, { descripcionAvance: nuevaSesion.trim() });
+      setDetalle(actualizado);
+      setNuevaSesion("");
+      cargar(); // el avance pudo haber cambiado por el trigger de la BD
+      toast.success("Sesión registrada");
+    } catch (error) {
+      toast.error("No se pudo registrar la sesión");
+    } finally {
+      setGuardandoSesion(false);
+    }
+  };
 
   return (
     <>
@@ -47,48 +209,71 @@ function Tratamientos() {
         description="Tratamientos asignados a pacientes y su avance."
         breadcrumbs={[{ label: "Tratamientos" }]}
         actions={
-          <Button onClick={() => setOpen(true)}>
+          <Button onClick={abrirNuevo}>
             <Plus className="h-4 w-4" /> Asignar tratamiento
           </Button>
         }
       />
 
       <Card className="overflow-hidden border-border p-0 shadow-card">
+        {/* NOTA: sin buscador de texto libre por paciente (requeriría un
+            JOIN a clinica.pacientes cuyo esquema no tengo). En su lugar,
+            filtro por paciente con un Select cargado de /api/pacientes. */}
         <DataToolbar
-          placeholder="Buscar por paciente..."
+          placeholder="Filtrar por paciente, avance o pago"
           exportName="Tratamientos"
           exportColumns={["Código", "Paciente", "Procedimiento", "Fecha", "Odontólogo", "Costo", "Avance", "Pago"]}
-          exportRows={tratamientos.map((t) => [
-            t.id,
-            t.paciente,
-            t.procedimiento,
-            t.fecha,
-            t.odontologo,
-            `C$ ${t.costo.toLocaleString("es-NI")}`,
-            t.avance,
-            t.pago,
+          exportRows={filas.map((t) => [
+            t.idTratamiento,
+            nombrePaciente(t.idPaciente),
+            nombreProcedimiento(t.idProcedimiento),
+            t.fechaProgramada ?? "",
+            t.personalNombre ?? "",
+            `C$ ${Number(t.costoTotal).toLocaleString("es-NI")}`,
+            t.estadoAvance,
+            t.estadoPago,
           ])}
         >
-
-          <Select>
-            <SelectTrigger className="w-44">
-              <SelectValue placeholder="Avance" />
+          <Select
+            value={idPacienteFiltro != null ? String(idPacienteFiltro) : "todos"}
+            onValueChange={(value) => setIdPacienteFiltro(value === "todos" ? undefined : Number(value))}
+          >
+            <SelectTrigger className="w-48">
+              <SelectValue placeholder="Paciente" />
             </SelectTrigger>
             <SelectContent>
-              {["pendiente", "en proceso", "completado"].map((e) => (
-                <SelectItem key={e} value={e} className="capitalize">
-                  {e}
+              <SelectItem value="todos">Todos los pacientes</SelectItem>
+              {pacientes.map((p) => (
+                <SelectItem key={p.idPaciente} value={String(p.idPaciente)}>
+                  {p.nombreCompleto}
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
-          <Select>
+          <Select value={avanceFiltro ?? "todos"} onValueChange={(value) => setAvanceFiltro(value === "todos" ? undefined : value)}>
+            <SelectTrigger className="w-44">
+              <SelectValue placeholder="Avance" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="todos">Todos</SelectItem>
+              {AVANCES.map((e) => (
+                <SelectItem key={e} value={e} className="capitalize">
+                  {e.replace("_", " ")}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select value={pagoFiltro ?? "todos"} onValueChange={(value) => setPagoFiltro(value === "todos" ? undefined : value)}>
             <SelectTrigger className="w-44">
               <SelectValue placeholder="Estado de pago" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="pagado">Pagado</SelectItem>
-              <SelectItem value="pendiente">Pendiente</SelectItem>
+              <SelectItem value="todos">Todos</SelectItem>
+              {PAGOS.map((e) => (
+                <SelectItem key={e} value={e} className="capitalize">
+                  {e}
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
         </DataToolbar>
@@ -109,34 +294,41 @@ function Tratamientos() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {tratamientos.map((t, i) => (
-                <TableRow key={t.id} className={i % 2 ? "bg-muted/25" : undefined}>
-                  <TableCell className="text-muted-foreground">{t.id}</TableCell>
-                  <TableCell className="font-medium">{t.paciente}</TableCell>
-                  <TableCell>{t.procedimiento}</TableCell>
-                  <TableCell className="text-muted-foreground">{t.fecha}</TableCell>
-                  <TableCell className="text-muted-foreground">{t.odontologo}</TableCell>
-                  <TableCell>C$ {t.costo.toLocaleString("es-NI")}</TableCell>
+              {!cargando && filas.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={9} className="py-8 text-center text-sm text-muted-foreground">
+                    No hay tratamientos con esos filtros.
+                  </TableCell>
+                </TableRow>
+              )}
+              {filas.map((t, i) => (
+                <TableRow key={t.idTratamiento} className={i % 2 ? "bg-muted/25" : undefined}>
+                  <TableCell className="text-muted-foreground">{t.idTratamiento}</TableCell>
+                  <TableCell className="font-medium">{nombrePaciente(t.idPaciente)}</TableCell>
+                  <TableCell>{nombreProcedimiento(t.idProcedimiento)}</TableCell>
+                  <TableCell className="text-muted-foreground">{t.fechaProgramada ?? "—"}</TableCell>
+                  <TableCell className="text-muted-foreground">{t.personalNombre}</TableCell>
+                  <TableCell>C$ {Number(t.costoTotal).toLocaleString("es-NI")}</TableCell>
                   <TableCell>
-                    <StatusBadge estado={t.avance} />
+                    <StatusBadge estado={t.estadoAvance} />
                   </TableCell>
                   <TableCell>
-                    <StatusBadge estado={t.pago} />
+                    <StatusBadge estado={t.estadoPago} />
                   </TableCell>
                   <TableCell>
                     <RowActions
-                      label={`tratamiento ${t.id}`}
-                      onView={() => setDetalle(t)}
-                      onEdit={() => setOpen(true)}
+                      label={`tratamiento ${t.idTratamiento}`}
+                      onView={() => verDetalle(t.idTratamiento)}
+                      onEdit={() => abrirEdicion(t)}
                       onPrint={() =>
-                        printRecord(`Tratamiento ${t.id}`, [
-                          { label: "Paciente", value: t.paciente },
-                          { label: "Procedimiento", value: t.procedimiento },
-                          { label: "Fecha", value: t.fecha },
-                          { label: "Odontólogo", value: t.odontologo },
-                          { label: "Costo", value: `C$ ${t.costo.toLocaleString("es-NI")}` },
-                          { label: "Avance", value: t.avance },
-                          { label: "Pago", value: t.pago },
+                        printRecord(`Tratamiento ${t.idTratamiento}`, [
+                          { label: "Paciente", value: nombrePaciente(t.idPaciente) },
+                          { label: "Procedimiento", value: nombreProcedimiento(t.idProcedimiento) },
+                          { label: "Fecha", value: t.fechaProgramada ?? "" },
+                          { label: "Odontólogo", value: t.personalNombre ?? "" },
+                          { label: "Costo", value: `C$ ${Number(t.costoTotal).toLocaleString("es-NI")}` },
+                          { label: "Avance", value: t.estadoAvance },
+                          { label: "Pago", value: t.estadoPago },
                         ])
                       }
                     />
@@ -146,13 +338,24 @@ function Tratamientos() {
             </TableBody>
           </Table>
         </div>
-        <TablePagination total={tratamientos.length} />
+        {/* Ver NOTA de paginación en personal.tsx: props de TablePagination asumidas. */}
+        <TablePagination
+          total={total}
+          page={page}
+          pageSize={pageSize}
+          pageSizeOptions={[10, 25, 50]}
+          onPageChange={setPage}
+          onPageSizeChange={(size: number) => {
+            setPageSize(size);
+            setPage(0);
+          }}
+        />
       </Card>
 
       <Sheet open={open} onOpenChange={setOpen}>
         <SheetContent className="w-full overflow-y-auto sm:max-w-md">
           <SheetHeader>
-            <SheetTitle>Asignar tratamiento</SheetTitle>
+            <SheetTitle>{editandoId ? "Editar tratamiento" : "Asignar tratamiento"}</SheetTitle>
             <SheetDescription>Los campos con * son obligatorios.</SheetDescription>
           </SheetHeader>
           <div className="space-y-4 px-4">
@@ -160,14 +363,14 @@ function Tratamientos() {
               <Label>
                 Paciente <span className="text-destructive">*</span>
               </Label>
-              <Select>
+              <Select value={form.idPaciente ? String(form.idPaciente) : ""} onValueChange={(value) => setForm({ ...form, idPaciente: Number(value) })}>
                 <SelectTrigger>
-                  <SelectValue placeholder="Buscar paciente..." />
+                  <SelectValue placeholder="Seleccione" />
                 </SelectTrigger>
                 <SelectContent>
                   {pacientes.map((p) => (
-                    <SelectItem key={p.id} value={p.id}>
-                      {p.nombre}
+                    <SelectItem key={p.idPaciente} value={String(p.idPaciente)}>
+                      {p.nombreCompleto}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -177,14 +380,14 @@ function Tratamientos() {
               <Label>
                 Procedimiento <span className="text-destructive">*</span>
               </Label>
-              <Select>
+              <Select value={form.idProcedimiento ? String(form.idProcedimiento) : ""} onValueChange={(value) => setForm({ ...form, idProcedimiento: Number(value) })}>
                 <SelectTrigger>
                   <SelectValue placeholder="Seleccione" />
                 </SelectTrigger>
                 <SelectContent>
                   {procedimientos.map((p) => (
-                    <SelectItem key={p.id} value={p.id}>
-                      {p.nombre}
+                    <SelectItem key={p.idProcedimiento} value={String(p.idProcedimiento)}>
+                      {p.nombreProcedimiento}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -194,14 +397,14 @@ function Tratamientos() {
               <Label>
                 Odontólogo <span className="text-destructive">*</span>
               </Label>
-              <Select>
+              <Select value={form.idPersonal ? String(form.idPersonal) : ""} onValueChange={(value) => setForm({ ...form, idPersonal: Number(value) })}>
                 <SelectTrigger>
                   <SelectValue placeholder="Seleccione" />
                 </SelectTrigger>
                 <SelectContent>
                   {odontologos.map((o) => (
-                    <SelectItem key={o} value={o}>
-                      {o}
+                    <SelectItem key={o.idPersonal} value={String(o.idPersonal)}>
+                      {o.nombreCompleto}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -210,29 +413,69 @@ function Tratamientos() {
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
                 <Label>Fecha programada</Label>
-                <Input type="date" />
+                <Input type="date" value={form.fechaProgramada ?? ""} onChange={(e) => setForm({ ...form, fechaProgramada: e.target.value })} />
               </div>
               <div className="space-y-2">
-                <Label>Costo (C$)</Label>
-                <Input type="number" defaultValue={950} />
+                <Label>
+                  Costo (C$) <span className="text-destructive">*</span>
+                </Label>
+                <Input type="number" min="0" value={form.costoTotal} onChange={(e) => setForm({ ...form, costoTotal: Number(e.target.value) })} />
               </div>
             </div>
             <div className="space-y-2">
+              <Label>Sesiones planificadas</Label>
+              <Input
+                type="number"
+                min="1"
+                value={form.sesionesPlanificadas ?? 1}
+                onChange={(e) => setForm({ ...form, sesionesPlanificadas: Number(e.target.value) })}
+              />
+            </div>
+            {editandoId && (
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label>Avance</Label>
+                  <Select value={form.estadoAvance ?? ""} onValueChange={(value) => setForm({ ...form, estadoAvance: value })}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {AVANCES.map((e) => (
+                        <SelectItem key={e} value={e} className="capitalize">
+                          {e.replace("_", " ")}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Pago</Label>
+                  <Select value={form.estadoPago ?? ""} onValueChange={(value) => setForm({ ...form, estadoPago: value })}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {PAGOS.map((e) => (
+                        <SelectItem key={e} value={e} className="capitalize">
+                          {e}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            )}
+            <div className="space-y-2">
               <Label>Notas</Label>
-              <Textarea rows={3} />
+              <Textarea rows={3} value={form.notas ?? ""} onChange={(e) => setForm({ ...form, notas: e.target.value })} />
             </div>
           </div>
           <SheetFooter className="flex-row justify-end gap-2">
-            <Button variant="outline" onClick={() => setOpen(false)}>
+            <Button variant="outline" onClick={() => setOpen(false)} disabled={guardando}>
               Cancelar
             </Button>
-            <Button
-              onClick={() => {
-                setOpen(false);
-                toast.success("Tratamiento asignado correctamente");
-              }}
-            >
-              Guardar
+            <Button onClick={guardar} disabled={guardando}>
+              {guardando ? "Guardando..." : "Guardar"}
             </Button>
           </SheetFooter>
         </SheetContent>
@@ -241,7 +484,7 @@ function Tratamientos() {
       <Dialog open={!!detalle} onOpenChange={(v) => !v && setDetalle(null)}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>Detalle del tratamiento {detalle?.id}</DialogTitle>
+            <DialogTitle>Detalle del tratamiento {detalle?.idTratamiento}</DialogTitle>
           </DialogHeader>
           {detalle && (
             <div className="space-y-5">
@@ -249,19 +492,27 @@ function Tratamientos() {
                 <CardContent className="grid gap-4 py-4 sm:grid-cols-2">
                   <div>
                     <p className="text-xs text-muted-foreground uppercase">Paciente</p>
-                    <p className="text-sm font-medium">{detalle.paciente}</p>
+                    <p className="text-sm font-medium">{nombrePaciente(detalle.idPaciente)}</p>
                   </div>
                   <div>
                     <p className="text-xs text-muted-foreground uppercase">Procedimiento</p>
-                    <p className="text-sm font-medium">{detalle.procedimiento}</p>
+                    <p className="text-sm font-medium">{nombreProcedimiento(detalle.idProcedimiento)}</p>
                   </div>
                   <div>
                     <p className="text-xs text-muted-foreground uppercase">Odontólogo</p>
-                    <p className="text-sm font-medium">{detalle.odontologo}</p>
+                    <p className="text-sm font-medium">{detalle.personalNombre}</p>
                   </div>
                   <div>
                     <p className="text-xs text-muted-foreground uppercase">Costo</p>
-                    <p className="text-sm font-medium">C$ {detalle.costo.toLocaleString("es-NI")}</p>
+                    <p className="text-sm font-medium">C$ {Number(detalle.costoTotal).toLocaleString("es-NI")}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground uppercase">Avance</p>
+                    <StatusBadge estado={detalle.estadoAvance} />
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground uppercase">Pago</p>
+                    <StatusBadge estado={detalle.estadoPago} />
                   </div>
                 </CardContent>
               </Card>
@@ -270,14 +521,22 @@ function Tratamientos() {
                   <CardTitle className="text-sm">Historial de sesiones</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3">
-                  {sesiones.map((s) => (
-                    <div key={s.fecha} className="rounded-lg bg-muted/60 p-3">
-                      <p className="text-xs font-semibold">
-                        {s.fecha} · {s.odontologo}
-                      </p>
-                      <p className="mt-1 text-sm text-muted-foreground">{s.nota}</p>
+                  {(detalle.sesiones ?? []).length === 0 && <p className="text-sm text-muted-foreground">Sin sesiones registradas todavía.</p>}
+                  {(detalle.sesiones ?? []).map((s) => (
+                    <div key={s.idSesion} className="rounded-lg bg-muted/60 p-3">
+                      <p className="text-xs font-semibold">{new Date(s.fechaSesion).toLocaleString("es-NI")}</p>
+                      <p className="mt-1 text-sm text-muted-foreground">{s.descripcionAvance}</p>
                     </div>
                   ))}
+                  <div className="flex items-end gap-2 pt-2">
+                    <div className="flex-1 space-y-1">
+                      <Label className="text-xs">Registrar avance</Label>
+                      <Textarea rows={2} value={nuevaSesion} onChange={(e) => setNuevaSesion(e.target.value)} placeholder="Descripción de lo realizado en esta sesión" />
+                    </div>
+                    <Button size="sm" onClick={guardarSesion} disabled={guardandoSesion || !nuevaSesion.trim()}>
+                      {guardandoSesion ? "Guardando..." : "Agregar"}
+                    </Button>
+                  </div>
                 </CardContent>
               </Card>
             </div>

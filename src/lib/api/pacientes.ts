@@ -61,3 +61,4 @@ export function exportarPacientesPdf(params: ListarPacientesParams = {}): Promis
 export function obtenerFichaPaciente(id: number): Promise<Blob> {
   return apiRequestBlob(`${BASE}/${id}/ficha`);
 }
+

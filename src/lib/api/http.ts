@@ -84,3 +84,17 @@ export function buildQueryString(params: Record<string, string | number | undefi
   const qs = usp.toString();
   return qs ? `?${qs}` : "";
 }
+
+/**
+ * Normaliza una respuesta de "listado" que puede venir como array plano
+ * (`[...]`) o como página de Spring Data (`{ content: [...], ... }`).
+ * Usar en cualquier endpoint que debería devolver una lista simple pero
+ * cuyo controlador aún no está confirmado (ej. /api/pacientes, /api/procedimientos).
+ */
+export function unwrapList<T>(data: unknown): T[] {
+  if (Array.isArray(data)) return data as T[];
+  if (data && typeof data === "object" && Array.isArray((data as { content?: unknown }).content)) {
+    return (data as { content: T[] }).content;
+  }
+  return [];
+}

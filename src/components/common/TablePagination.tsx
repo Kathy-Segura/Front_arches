@@ -11,14 +11,25 @@ import {
 type Props = {
   total: number;
   /** Página actual, 0-based. Si se omite, el componente queda "tonto" como antes (sin controles activos). */
-  page?: number;
+  page?: number | undefined;
   /** Tamaño de página actual. Default 10. */
-  pageSize?: number;
-  onPageChange?: (page: number) => void;
-  onPageSizeChange?: (size: number) => void;
+  pageSize?: number | undefined;
+  /** Opciones del selector de "Filas por página". Default [10, 25, 50, 100]. */
+  pageSizeOptions?: number[] | undefined;
+  onPageChange?: ((page: number) => void) | undefined;
+  onPageSizeChange?: ((size: number) => void) | undefined;
 };
 
-export function TablePagination({ total, page, pageSize = 10, onPageChange, onPageSizeChange }: Props) {
+const DEFAULT_PAGE_SIZE_OPTIONS = [10, 25, 50];
+
+export function TablePagination({
+  total,
+  page,
+  pageSize = 10,
+  pageSizeOptions = DEFAULT_PAGE_SIZE_OPTIONS,
+  onPageChange,
+  onPageSizeChange,
+}: Props) {
   const controlado = page !== undefined && onPageChange !== undefined;
   const totalPages = controlado ? Math.max(1, Math.ceil(total / pageSize)) : 1;
   const paginaActual = controlado ? page! : 0;
@@ -40,8 +51,8 @@ export function TablePagination({ total, page, pageSize = 10, onPageChange, onPa
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {["10", "25", "50", "100"].map((v) => (
-              <SelectItem key={v} value={v}>
+            {pageSizeOptions.map((v) => (
+              <SelectItem key={v} value={String(v)}>
                 {v}
               </SelectItem>
             ))}
