@@ -1,8 +1,5 @@
 import { apiRequest } from "./http";
-import type { PaginaDTO } from "@/types/personal";
-import type { PersonalDTO } from "@/types/personal";
-import type { PersonalDetalleDTO } from "@/types/personal";
-import type { PersonalRequestDTO } from "@/types/personal";
+import type { PersonalDTO, PersonalDetalleDTO, PersonalRequestDTO, PaginaDTO } from "@/types/personal";
 
 const BASE = "/api/personal";
 
@@ -13,13 +10,13 @@ export function listarOdontologos(): Promise<PersonalDTO[]> {
 
 // --- CRUD completo del módulo de Personal ---
 // Nota: PersonalDetalleDTO, PersonalRequestDTO y PaginaDTO<T> son nuevos,
-// agrégarlos a @/types/personal (ver el bloque de tipos que te paso aparte).
+// agrégalos a @/types/personal (ver el bloque de tipos que te paso aparte).
 
 export interface ListarPersonalParams {
-  cargo?: string;
-  q?: string;
-  page?: number;
-  size?: number;
+  cargo?: string | undefined;
+  q?: string | undefined;
+  page?: number | undefined;
+  size?: number | undefined;
 }
 
 /** GET /api/personal — listado paginado con filtro por cargo y búsqueda por nombre */
