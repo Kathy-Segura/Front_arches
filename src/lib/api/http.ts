@@ -4,8 +4,10 @@
 //
 // Ajusta VITE_API_BASE_URL en tu .env si el backend no corre en localhost:8080.
 //   VITE_API_BASE_URL=http://localhost:8081 
-const VITE_API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8081";
-//const VITE_API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "https://back-arches.onrender.com/swagger-ui/index.html#";
+//const VITE_API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8081";
+const VITE_API_BASE_URL = (
+  import.meta.env.VITE_API_BASE_URL ?? "https://back-arches.onrender.com"
+).replace(/\/+$/, "");
 
 export class ApiError extends Error {
   status: number;
