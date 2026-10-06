@@ -12,6 +12,7 @@ const map: Record<string, string> = {
   "en proceso": "bg-info-soft text-primary-dark border-primary/25",
   "en curso": "bg-info-soft text-primary-dark border-primary/25",
   programada: "bg-info-soft text-primary-dark border-primary/25",
+  parcial: "bg-info-soft text-primary-dark border-primary/25",
   inactivo: "bg-muted text-muted-foreground border-border",
   archivado: "bg-muted text-muted-foreground border-border",
   cancelado: "bg-danger-soft text-destructive border-destructive/25",

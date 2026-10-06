@@ -13,6 +13,7 @@ const BASE = "/api/citas";
 /** GET /api/citas — pestaña "Listado": búsqueda + filtros + tabla paginada */
 export function listarCitas(params: ListarCitasParams = {}): Promise<PageResponse<CitaDTO>> {
   const qs = buildQueryString({
+    idPaciente: params.idPaciente,
     search: params.search,
     idPersonal: params.idPersonal,
     estado: params.estado,

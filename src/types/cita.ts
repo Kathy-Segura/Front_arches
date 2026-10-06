@@ -44,6 +44,7 @@ export interface PageResponse<T> {
 }
 
 export interface ListarCitasParams {
+  idPaciente?: number;
   search?: string;
   idPersonal?: number;
   estado?: EstadoCita | "";

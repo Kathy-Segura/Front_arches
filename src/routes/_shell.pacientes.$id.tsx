@@ -1,5 +1,5 @@
 import { createFileRoute, Link, notFound, useRouter } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Pencil, Printer, ArrowLeft, Phone, Mail, MapPin, CalendarDays, FileHeart, Plus, Trash2, X, Check } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/layout/PageHeader";
@@ -12,7 +12,13 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { citas, planTratamiento } from "@/lib/mock-data";
+import { TablePagination } from "@/components/common/TablePagination";
+import { listarCitas } from "@/lib/api/citas"
+import { listarTratamientos } from "@/lib/api/tratamientos";
+import { listarProcedimientos } from "@/lib/api/procedimientos";
+import { separarFechaHora } from "@/types/cita";
+import type { CitaDTO } from "@/types/cita";
+import type { TratamientoDTO } from "@/types/tratamiento";
 import { ApiError, abrirBlobEnPestana } from "@/lib/api/http";
 import { obtenerPaciente, actualizarPaciente, obtenerFichaPaciente } from "@/lib/api/pacientes";
 import {
@@ -83,8 +89,6 @@ function DetallePaciente() {
     telefono: pacienteInicial.telefono,
     correo: pacienteInicial.correo ?? "",
   });
-
-  const citasPaciente = citas.filter((c) => c.paciente === paciente.nombreCompleto);
 
   async function recargar() {
     const actualizado = await obtenerPaciente(paciente.idPaciente);
@@ -296,42 +300,7 @@ function DetallePaciente() {
         </TabsContent>
 
         <TabsContent value="citas" className="mt-4">
-          <Card className="overflow-hidden border-border p-0 shadow-card">
-            <Table>
-              <TableHeader className="bg-muted/60">
-                <TableRow>
-                  <TableHead>Fecha</TableHead>
-                  <TableHead>Hora</TableHead>
-                  <TableHead>Procedimiento</TableHead>
-                  <TableHead>Odontólogo</TableHead>
-                  <TableHead>Estado</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {citasPaciente.length === 0 && (
-                  <TableRow>
-                    <TableCell colSpan={5} className="py-10 text-center text-muted-foreground">
-                      Sin citas registradas para este paciente.
-                    </TableCell>
-                  </TableRow>
-                )}
-                {citasPaciente.map((c) => (
-                  <TableRow key={c.id}>
-                    <TableCell>{c.fecha}</TableCell>
-                    <TableCell>{c.hora}</TableCell>
-                    <TableCell>{c.procedimiento}</TableCell>
-                    <TableCell className="text-muted-foreground">{c.odontologo}</TableCell>
-                    <TableCell>
-                      <StatusBadge estado={c.estado} />
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </Card>
-          <p className="mt-2 text-xs text-muted-foreground">
-            Este tab sigue usando datos de ejemplo — se conecta cuando el módulo de Agenda y Citas tenga su propia API.
-          </p>
+          <CitasTab idPaciente={paciente.idPaciente} />
         </TabsContent>
 
         <TabsContent value="expediente" className="mt-4">
@@ -354,35 +323,7 @@ function DetallePaciente() {
         </TabsContent>
 
         <TabsContent value="tratamientos" className="mt-4">
-          <Card className="overflow-hidden border-border p-0 shadow-card">
-            <Table>
-              <TableHeader className="bg-muted/60">
-                <TableRow>
-                  <TableHead>Procedimiento</TableHead>
-                  <TableHead>Sesiones</TableHead>
-                  <TableHead>Odontólogo</TableHead>
-                  <TableHead>Costo</TableHead>
-                  <TableHead>Estado</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {planTratamiento.map((t) => (
-                  <TableRow key={t.procedimiento}>
-                    <TableCell className="font-medium">{t.procedimiento}</TableCell>
-                    <TableCell className="text-muted-foreground">{t.sesiones}</TableCell>
-                    <TableCell className="text-muted-foreground">{t.odontologo}</TableCell>
-                    <TableCell>C$ {t.costo.toLocaleString("es-NI")}</TableCell>
-                    <TableCell>
-                      <StatusBadge estado={t.estado} />
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </Card>
-          <p className="mt-2 text-xs text-muted-foreground">
-            Este tab sigue usando datos de ejemplo — se conecta cuando el módulo de Procedimientos tenga su propia API.
-          </p>
+          <TratamientosTab idPaciente={paciente.idPaciente} />
         </TabsContent>
       </Tabs>
 
@@ -663,6 +604,195 @@ function AntecedentesCard({
           </div>
         )}
       </CardContent>
+    </Card>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Historial de citas: GET /api/citas?idPaciente=... (paginado)
+// ---------------------------------------------------------------------------
+function CitasTab({ idPaciente }: { idPaciente: number }) {
+  const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = useState(10);
+  const [data, setData] = useState<CitaDTO[]>([]);
+  const [total, setTotal] = useState(0);
+  const [cargando, setCargando] = useState(false);
+
+  useEffect(() => {
+    let activo = true;
+    setCargando(true);
+    listarCitas({ idPaciente, page, size: pageSize })
+      .then((res) => {
+        if (!activo) return;
+        setData(res.content);
+        setTotal(res.totalElements);
+      })
+      .catch((err) => {
+        if (activo) toast.error(err instanceof ApiError ? err.message : "No se pudo cargar el historial de citas");
+      })
+      .finally(() => {
+        if (activo) setCargando(false);
+      });
+    return () => {
+      activo = false;
+    };
+  }, [idPaciente, page, pageSize]);
+
+  return (
+    <Card className="overflow-hidden border-border p-0 shadow-card">
+      <div className="overflow-x-auto">
+        <Table>
+          <TableHeader className="bg-muted/60">
+            <TableRow>
+              <TableHead>Fecha</TableHead>
+              <TableHead>Hora</TableHead>
+              <TableHead>Procedimiento</TableHead>
+              <TableHead>Odontólogo</TableHead>
+              <TableHead>Estado</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {cargando && (
+              <TableRow>
+                <TableCell colSpan={5} className="py-10 text-center text-muted-foreground">
+                  Cargando citas...
+                </TableCell>
+              </TableRow>
+            )}
+            {!cargando && data.length === 0 && (
+              <TableRow>
+                <TableCell colSpan={5} className="py-10 text-center text-muted-foreground">
+                  Sin citas registradas para este paciente.
+                </TableCell>
+              </TableRow>
+            )}
+            {!cargando &&
+              data.map((c) => {
+                const { fecha, hora } = separarFechaHora(c.fechaHora);
+                return (
+                  <TableRow key={c.idCita}>
+                    <TableCell>{fecha}</TableCell>
+                    <TableCell>{hora}</TableCell>
+                    <TableCell>{c.nombreProcedimiento ?? "—"}</TableCell>
+                    <TableCell className="text-muted-foreground">{c.nombrePersonal}</TableCell>
+                    <TableCell>
+                      <StatusBadge estado={c.estadoCita} />
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+          </TableBody>
+        </Table>
+      </div>
+      <TablePagination
+        total={total}
+        page={page}
+        pageSize={pageSize}
+        onPageChange={setPage}
+        onPageSizeChange={(size) => {
+          setPageSize(size);
+          setPage(0);
+        }}
+      />
+    </Card>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Tratamientos: GET /api/tratamientos?idPaciente=... (paginado)
+// El DTO solo trae idProcedimiento, así que el nombre se resuelve con
+// GET /api/procedimientos (lista plana).
+// ---------------------------------------------------------------------------
+function TratamientosTab({ idPaciente }: { idPaciente: number }) {
+  const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = useState(10);
+  const [data, setData] = useState<TratamientoDTO[]>([]);
+  const [total, setTotal] = useState(0);
+  const [cargando, setCargando] = useState(false);
+  const [nombresProcedimiento, setNombresProcedimiento] = useState<Map<number, string>>(new Map());
+
+  useEffect(() => {
+    listarProcedimientos()
+      .then((lista) => setNombresProcedimiento(new Map(lista.map((p) => [p.idProcedimiento, p.nombreProcedimiento]))))
+      .catch(() => toast.error("No se pudieron cargar los nombres de los procedimientos"));
+  }, []);
+
+  useEffect(() => {
+    let activo = true;
+    setCargando(true);
+    listarTratamientos({ idPaciente, page, size: pageSize })
+      .then((res) => {
+        if (!activo) return;
+        setData(res.contenido);
+        setTotal(res.totalElementos);
+      })
+      .catch((err) => {
+        if (activo) toast.error(err instanceof ApiError ? err.message : "No se pudieron cargar los tratamientos");
+      })
+      .finally(() => {
+        if (activo) setCargando(false);
+      });
+    return () => {
+      activo = false;
+    };
+  }, [idPaciente, page, pageSize]);
+
+  return (
+    <Card className="overflow-hidden border-border p-0 shadow-card">
+      <div className="overflow-x-auto">
+        <Table>
+          <TableHeader className="bg-muted/60">
+            <TableRow>
+              <TableHead>Procedimiento</TableHead>
+              <TableHead>Sesiones</TableHead>
+              <TableHead>Odontólogo</TableHead>
+              <TableHead>Costo</TableHead>
+              <TableHead>Estado</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {cargando && (
+              <TableRow>
+                <TableCell colSpan={5} className="py-10 text-center text-muted-foreground">
+                  Cargando tratamientos...
+                </TableCell>
+              </TableRow>
+            )}
+            {!cargando && data.length === 0 && (
+              <TableRow>
+                <TableCell colSpan={5} className="py-10 text-center text-muted-foreground">
+                  Sin tratamientos registrados para este paciente.
+                </TableCell>
+              </TableRow>
+            )}
+            {!cargando &&
+              data.map((t) => (
+                <TableRow key={t.idTratamiento}>
+                  <TableCell className="font-medium">
+                    {nombresProcedimiento.get(t.idProcedimiento) ?? `Procedimiento #${t.idProcedimiento}`}
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">{t.sesionesPlanificadas}</TableCell>
+                  <TableCell className="text-muted-foreground">{t.personalNombre ?? "—"}</TableCell>
+                  <TableCell>C$ {Number(t.costoTotal).toLocaleString("es-NI")}</TableCell>
+                  <TableCell>
+                    {/* StatusBadge usa "en proceso" (con espacio); el backend envía "en_proceso" */}
+                    <StatusBadge estado={t.estadoAvance.replace(/_/g, " ")} />
+                  </TableCell>
+                </TableRow>
+              ))}
+          </TableBody>
+        </Table>
+      </div>
+      <TablePagination
+        total={total}
+        page={page}
+        pageSize={pageSize}
+        onPageChange={setPage}
+        onPageSizeChange={(size) => {
+          setPageSize(size);
+          setPage(0);
+        }}
+      />
     </Card>
   );
 }
