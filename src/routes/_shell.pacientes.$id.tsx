@@ -1,5 +1,5 @@
 import { createFileRoute, Link, notFound, useRouter } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Pencil, Printer, ArrowLeft, Phone, Mail, MapPin, CalendarDays, FileHeart, Plus, Trash2, X, Check } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/layout/PageHeader";
@@ -12,13 +12,6 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { TablePagination } from "@/components/common/TablePagination";
-import { listarCitas } from "@/lib/api/citas"
-import { listarTratamientos } from "@/lib/api/tratamientos";
-import { listarProcedimientos } from "@/lib/api/procedimientos";
-import { separarFechaHora } from "@/types/cita";
-import type { CitaDTO } from "@/types/cita";
-import type { TratamientoDTO } from "@/types/tratamiento";
 import { ApiError, abrirBlobEnPestana } from "@/lib/api/http";
 import { obtenerPaciente, actualizarPaciente, obtenerFichaPaciente } from "@/lib/api/pacientes";
 import {
@@ -34,6 +27,12 @@ import {
 import type { PacienteDTO, ContactoEmergenciaDTO, AntecedenteDTO, PacienteInput } from "@/types/paciente";
 import { AntecedenteTipoSelect } from "@/components/ui/antecedenteTipoSelect";
 import { labelAntecedente } from "@/types/paciente";
+import { listarCitas } from "@/lib/api/citas";
+import { listarTratamientos } from "@/lib/api/tratamientos";
+import { obtenerResumenExpediente } from "@/lib/api/expedientes";
+import { useCarga } from  "@/lib/useCarga";
+import { codigoCita, separarFechaHora } from "@/types/cita";
+import { formatearFecha, formatearFechaHora } from "@/types/expediente";
 
   export const Route = createFileRoute("/_shell/pacientes/$id")({
   validateSearch: (search: { edit?: unknown }) => ({
@@ -89,6 +88,7 @@ function DetallePaciente() {
     telefono: pacienteInicial.telefono,
     correo: pacienteInicial.correo ?? "",
   });
+
 
   async function recargar() {
     const actualizado = await obtenerPaciente(paciente.idPaciente);
@@ -300,26 +300,11 @@ function DetallePaciente() {
         </TabsContent>
 
         <TabsContent value="citas" className="mt-4">
-          <CitasTab idPaciente={paciente.idPaciente} />
+          <HistorialCitasTab idPaciente={paciente.idPaciente} />
         </TabsContent>
 
         <TabsContent value="expediente" className="mt-4">
-          <Card className="border-border shadow-card">
-            <CardContent className="flex flex-col items-center gap-4 py-14 text-center">
-              <FileHeart className="h-10 w-10 text-primary" strokeWidth={1.5} />
-              <div>
-                <p className="font-medium">Expediente clínico odontológico</p>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Historia clínica, odontograma, diagnósticos y evolución del paciente.
-                </p>
-              </div>
-              <Button asChild>
-                <Link to="/expedientes/$id" params={{ id: String(paciente.idPaciente) }}>
-                  Abrir expediente
-                </Link>
-              </Button>
-            </CardContent>
-          </Card>
+          <ExpedienteResumenTab idPaciente={paciente.idPaciente} />
         </TabsContent>
 
         <TabsContent value="tratamientos" className="mt-4">
@@ -608,191 +593,239 @@ function AntecedentesCard({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Historial de citas: GET /api/citas?idPaciente=... (paginado)
-// ---------------------------------------------------------------------------
-function CitasTab({ idPaciente }: { idPaciente: number }) {
-  const [page, setPage] = useState(0);
-  const [pageSize, setPageSize] = useState(10);
-  const [data, setData] = useState<CitaDTO[]>([]);
-  const [total, setTotal] = useState(0);
-  const [cargando, setCargando] = useState(false);
+// --------------------------------------------------------------------------
+// Pestañas conectadas a los módulos Citas, Expediente y Tratamientos
+// --------------------------------------------------------------------------
+const TAM_PAGINA_TAB = 10;
 
-  useEffect(() => {
-    let activo = true;
-    setCargando(true);
-    listarCitas({ idPaciente, page, size: pageSize })
-      .then((res) => {
-        if (!activo) return;
-        setData(res.content);
-        setTotal(res.totalElements);
-      })
-      .catch((err) => {
-        if (activo) toast.error(err instanceof ApiError ? err.message : "No se pudo cargar el historial de citas");
-      })
-      .finally(() => {
-        if (activo) setCargando(false);
-      });
-    return () => {
-      activo = false;
-    };
-  }, [idPaciente, page, pageSize]);
+function PiePaginacion({
+  pagina,
+  totalPaginas,
+  total,
+  onCambiar,
+}: {
+  pagina: number;
+  totalPaginas: number;
+  total: number;
+  onCambiar: (p: number) => void;
+}) {
+  return (
+    <div className="flex items-center justify-between border-t border-border p-3 text-sm text-muted-foreground">
+      <span>
+        {total} registro{total === 1 ? "" : "s"}
+      </span>
+      <div className="flex items-center gap-2">
+        <Button variant="outline" size="sm" disabled={pagina <= 0} onClick={() => onCambiar(pagina - 1)}>
+          Anterior
+        </Button>
+        <span>
+          Página {totalPaginas === 0 ? 0 : pagina + 1} de {totalPaginas}
+        </span>
+        <Button variant="outline" size="sm" disabled={pagina + 1 >= totalPaginas} onClick={() => onCambiar(pagina + 1)}>
+          Siguiente
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function HistorialCitasTab({ idPaciente }: { idPaciente: number }) {
+  const [pagina, setPagina] = useState(0);
+  const { datos, cargando, error } = useCarga(
+    () => listarCitas({ idPaciente, page: pagina, size: TAM_PAGINA_TAB }),
+    [idPaciente, pagina],
+    "No se pudo cargar el historial de citas",
+  );
+  const citas = datos?.content ?? [];
 
   return (
     <Card className="overflow-hidden border-border p-0 shadow-card">
-      <div className="overflow-x-auto">
-        <Table>
-          <TableHeader className="bg-muted/60">
+      <Table>
+        <TableHeader className="bg-muted/60">
+          <TableRow>
+            <TableHead>Código</TableHead>
+            <TableHead>Fecha</TableHead>
+            <TableHead>Hora</TableHead>
+            <TableHead>Procedimiento</TableHead>
+            <TableHead>Odontólogo</TableHead>
+            <TableHead>Estado</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {cargando && (
             <TableRow>
-              <TableHead>Fecha</TableHead>
-              <TableHead>Hora</TableHead>
-              <TableHead>Procedimiento</TableHead>
-              <TableHead>Odontólogo</TableHead>
-              <TableHead>Estado</TableHead>
+              <TableCell colSpan={6} className="py-8 text-center text-muted-foreground">
+                Cargando citas…
+              </TableCell>
             </TableRow>
-          </TableHeader>
-          <TableBody>
-            {cargando && (
-              <TableRow>
-                <TableCell colSpan={5} className="py-10 text-center text-muted-foreground">
-                  Cargando citas...
-                </TableCell>
-              </TableRow>
-            )}
-            {!cargando && data.length === 0 && (
-              <TableRow>
-                <TableCell colSpan={5} className="py-10 text-center text-muted-foreground">
-                  Sin citas registradas para este paciente.
-                </TableCell>
-              </TableRow>
-            )}
-            {!cargando &&
-              data.map((c) => {
-                const { fecha, hora } = separarFechaHora(c.fechaHora);
-                return (
-                  <TableRow key={c.idCita}>
-                    <TableCell>{fecha}</TableCell>
-                    <TableCell>{hora}</TableCell>
-                    <TableCell>{c.nombreProcedimiento ?? "—"}</TableCell>
-                    <TableCell className="text-muted-foreground">{c.nombrePersonal}</TableCell>
-                    <TableCell>
-                      <StatusBadge estado={c.estadoCita} />
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-          </TableBody>
-        </Table>
-      </div>
-      <TablePagination
-        total={total}
-        page={page}
-        pageSize={pageSize}
-        onPageChange={setPage}
-        onPageSizeChange={(size) => {
-          setPageSize(size);
-          setPage(0);
-        }}
+          )}
+          {error && (
+            <TableRow>
+              <TableCell colSpan={6} className="py-8 text-center text-destructive">
+                {error}
+              </TableCell>
+            </TableRow>
+          )}
+          {!cargando && !error && citas.length === 0 && (
+            <TableRow>
+              <TableCell colSpan={6} className="py-8 text-center text-muted-foreground">
+                Este paciente no tiene citas registradas.
+              </TableCell>
+            </TableRow>
+          )}
+          {!cargando &&
+            citas.map((c, i) => {
+              const { fecha, hora } = separarFechaHora(c.fechaHora);
+              return (
+                <TableRow key={c.idCita} className={i % 2 ? "bg-muted/25" : undefined}>
+                  <TableCell className="font-medium">{codigoCita(c.idCita)}</TableCell>
+                  <TableCell>{formatearFecha(fecha)}</TableCell>
+                  <TableCell>{hora}</TableCell>
+                  <TableCell className="text-muted-foreground">{c.nombreProcedimiento ?? "—"}</TableCell>
+                  <TableCell className="text-muted-foreground">{c.nombrePersonal}</TableCell>
+                  <TableCell>
+                    <StatusBadge estado={c.estadoCita} />
+                  </TableCell>
+                </TableRow>
+              );
+            })}
+        </TableBody>
+      </Table>
+      <PiePaginacion
+        pagina={pagina}
+        totalPaginas={datos?.totalPages ?? 0}
+        total={datos?.totalElements ?? 0}
+        onCambiar={setPagina}
       />
     </Card>
   );
 }
 
-// ---------------------------------------------------------------------------
-// Tratamientos: GET /api/tratamientos?idPaciente=... (paginado)
-// El DTO solo trae idProcedimiento, así que el nombre se resuelve con
-// GET /api/procedimientos (lista plana).
-// ---------------------------------------------------------------------------
 function TratamientosTab({ idPaciente }: { idPaciente: number }) {
-  const [page, setPage] = useState(0);
-  const [pageSize, setPageSize] = useState(10);
-  const [data, setData] = useState<TratamientoDTO[]>([]);
-  const [total, setTotal] = useState(0);
-  const [cargando, setCargando] = useState(false);
-  const [nombresProcedimiento, setNombresProcedimiento] = useState<Map<number, string>>(new Map());
-
-  useEffect(() => {
-    listarProcedimientos()
-      .then((lista) => setNombresProcedimiento(new Map(lista.map((p) => [p.idProcedimiento, p.nombreProcedimiento]))))
-      .catch(() => toast.error("No se pudieron cargar los nombres de los procedimientos"));
-  }, []);
-
-  useEffect(() => {
-    let activo = true;
-    setCargando(true);
-    listarTratamientos({ idPaciente, page, size: pageSize })
-      .then((res) => {
-        if (!activo) return;
-        setData(res.contenido);
-        setTotal(res.totalElementos);
-      })
-      .catch((err) => {
-        if (activo) toast.error(err instanceof ApiError ? err.message : "No se pudieron cargar los tratamientos");
-      })
-      .finally(() => {
-        if (activo) setCargando(false);
-      });
-    return () => {
-      activo = false;
-    };
-  }, [idPaciente, page, pageSize]);
+  const [pagina, setPagina] = useState(0);
+  const { datos, cargando, error } = useCarga(
+    () => listarTratamientos({ idPaciente, page: pagina, size: TAM_PAGINA_TAB }),
+    [idPaciente, pagina],
+    "No se pudieron cargar los tratamientos",
+  );
+  const tratamientos = datos?.contenido ?? [];
 
   return (
     <Card className="overflow-hidden border-border p-0 shadow-card">
-      <div className="overflow-x-auto">
-        <Table>
-          <TableHeader className="bg-muted/60">
+      <Table>
+        <TableHeader className="bg-muted/60">
+          <TableRow>
+            <TableHead>Tratamiento</TableHead>
+            <TableHead>Programado</TableHead>
+            <TableHead>Odontólogo</TableHead>
+            <TableHead>Sesiones</TableHead>
+            <TableHead>Costo</TableHead>
+            <TableHead>Avance</TableHead>
+            <TableHead>Pago</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {cargando && (
             <TableRow>
-              <TableHead>Procedimiento</TableHead>
-              <TableHead>Sesiones</TableHead>
-              <TableHead>Odontólogo</TableHead>
-              <TableHead>Costo</TableHead>
-              <TableHead>Estado</TableHead>
+              <TableCell colSpan={7} className="py-8 text-center text-muted-foreground">
+                Cargando tratamientos…
+              </TableCell>
             </TableRow>
-          </TableHeader>
-          <TableBody>
-            {cargando && (
-              <TableRow>
-                <TableCell colSpan={5} className="py-10 text-center text-muted-foreground">
-                  Cargando tratamientos...
+          )}
+          {error && (
+            <TableRow>
+              <TableCell colSpan={7} className="py-8 text-center text-destructive">
+                {error}
+              </TableCell>
+            </TableRow>
+          )}
+          {!cargando && !error && tratamientos.length === 0 && (
+            <TableRow>
+              <TableCell colSpan={7} className="py-8 text-center text-muted-foreground">
+                Este paciente no tiene tratamientos registrados.
+              </TableCell>
+            </TableRow>
+          )}
+          {!cargando &&
+            tratamientos.map((t, i) => (
+              <TableRow key={t.idTratamiento} className={i % 2 ? "bg-muted/25" : undefined}>
+                <TableCell className="font-medium">T-{String(t.idTratamiento).padStart(4, "0")}</TableCell>
+                <TableCell>{formatearFecha(t.fechaProgramada)}</TableCell>
+                <TableCell className="text-muted-foreground">{t.personalNombre ?? "—"}</TableCell>
+                <TableCell className="text-muted-foreground">{t.sesionesPlanificadas}</TableCell>
+                <TableCell>C$ {Number(t.costoTotal).toLocaleString("es-NI")}</TableCell>
+                <TableCell>
+                  <StatusBadge estado={t.estadoAvance} />
+                </TableCell>
+                <TableCell>
+                  <StatusBadge estado={t.estadoPago} />
                 </TableCell>
               </TableRow>
-            )}
-            {!cargando && data.length === 0 && (
-              <TableRow>
-                <TableCell colSpan={5} className="py-10 text-center text-muted-foreground">
-                  Sin tratamientos registrados para este paciente.
-                </TableCell>
-              </TableRow>
-            )}
-            {!cargando &&
-              data.map((t) => (
-                <TableRow key={t.idTratamiento}>
-                  <TableCell className="font-medium">
-                    {nombresProcedimiento.get(t.idProcedimiento) ?? `Procedimiento #${t.idProcedimiento}`}
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">{t.sesionesPlanificadas}</TableCell>
-                  <TableCell className="text-muted-foreground">{t.personalNombre ?? "—"}</TableCell>
-                  <TableCell>C$ {Number(t.costoTotal).toLocaleString("es-NI")}</TableCell>
-                  <TableCell>
-                    {/* StatusBadge usa "en proceso" (con espacio); el backend envía "en_proceso" */}
-                    <StatusBadge estado={t.estadoAvance.replace(/_/g, " ")} />
-                  </TableCell>
-                </TableRow>
-              ))}
-          </TableBody>
-        </Table>
-      </div>
-      <TablePagination
-        total={total}
-        page={page}
-        pageSize={pageSize}
-        onPageChange={setPage}
-        onPageSizeChange={(size) => {
-          setPageSize(size);
-          setPage(0);
-        }}
+            ))}
+        </TableBody>
+      </Table>
+      <PiePaginacion
+        pagina={pagina}
+        totalPaginas={datos?.totalPaginas ?? 0}
+        total={datos?.totalElementos ?? 0}
+        onCambiar={setPagina}
       />
+    </Card>
+  );
+}
+
+function ExpedienteResumenTab({ idPaciente }: { idPaciente: number }) {
+  const { datos, cargando, error } = useCarga(
+    () => obtenerResumenExpediente(idPaciente),
+    [idPaciente],
+    "No se pudo cargar el resumen del expediente",
+  );
+
+  return (
+    <Card className="border-border shadow-card">
+      <CardContent className="space-y-6 py-8">
+        <div className="flex flex-col items-center gap-2 text-center">
+          <FileHeart className="h-10 w-10 text-primary" strokeWidth={1.5} />
+          <p className="font-medium">Expediente clínico odontológico</p>
+          <p className="text-sm text-muted-foreground">
+            Historia clínica, odontograma, diagnósticos, plan de tratamiento y evolución del paciente.
+          </p>
+        </div>
+
+        {cargando && <p className="text-center text-sm text-muted-foreground">Cargando resumen…</p>}
+        {error && <p className="text-center text-sm text-destructive">{error}</p>}
+        {datos && (
+          <dl className="grid gap-4 text-center sm:grid-cols-3">
+            <div className="rounded-lg bg-muted/60 p-4">
+              <dt className="text-xs uppercase text-muted-foreground">Diagnósticos</dt>
+              <dd className="text-2xl font-semibold">{datos.totalDiagnosticos}</dd>
+            </div>
+            <div className="rounded-lg bg-muted/60 p-4">
+              <dt className="text-xs uppercase text-muted-foreground">Notas de evolución</dt>
+              <dd className="text-2xl font-semibold">{datos.totalNotasEvolucion}</dd>
+            </div>
+            <div className="rounded-lg bg-muted/60 p-4">
+              <dt className="text-xs uppercase text-muted-foreground">Citas atendidas</dt>
+              <dd className="text-2xl font-semibold">{datos.totalCitasAtendidas}</dd>
+            </div>
+          </dl>
+        )}
+        {datos && (
+          <p className="text-center text-xs text-muted-foreground">
+            {datos.historiaClinicaActualizada
+              ? `Historia clínica actualizada: ${formatearFechaHora(datos.historiaClinicaActualizada)}`
+              : "Aún no se ha registrado la historia clínica."}
+          </p>
+        )}
+
+        <div className="flex justify-center">
+          <Button asChild>
+            <Link to="/expedientes/$id" params={{ id: String(idPaciente) }}>
+              Abrir expediente
+            </Link>
+          </Button>
+        </div>
+      </CardContent>
     </Card>
   );
 }

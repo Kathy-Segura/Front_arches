@@ -3,11 +3,15 @@
 // de configuración (base URL, headers, manejo de errores).
 //
 // Ajusta VITE_API_BASE_URL en tu .env si el backend no corre en localhost:8080.
-//   VITE_API_BASE_URL=http://localhost:8081 
-//const VITE_API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8081";
+// Ajustar la ruta dependiendo si estamos probando en local o en el despliegue.
 const VITE_API_BASE_URL = (
+  import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8081"
+).replace(/\/+$/, "");
+
+/*const VITE_API_BASE_URL = (
   import.meta.env.VITE_API_BASE_URL ?? "https://back-arches.onrender.com"
 ).replace(/\/+$/, "");
+*/
 
 export class ApiError extends Error {
   status: number;
