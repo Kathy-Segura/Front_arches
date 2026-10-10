@@ -1,16 +1,19 @@
 // Cliente HTTP mínimo para consumir la API de Spring Boot.
 // No había uno centralizado en el proyecto, así que este es el punto único
 // de configuración (base URL, headers, manejo de errores).
-
 // Cambiar la url en dependencia en que ambiente se esta probando ya sea en local o produccion.
+//---------------------------------------------------------------------------------------//
+// Url para probar en LOCALHOST
 /*const VITE_API_BASE_URL = (
   import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8081"
-).replace(/\/+$/, "");
-*/
+).replace(/\/+$/, "");*/
+//---------------------------------------------------------------------------------------//
+// Url para probar en PRODUCCION
 const VITE_API_BASE_URL = (
   import.meta.env.VITE_API_BASE_URL ?? "https://back-arches.onrender.com"
 ).replace(/\/+$/, "");
 
+//---------------------------------------------------------------------------------------//
 export class ApiError extends Error {
   status: number;
   constructor(status: number, message: string) {

@@ -13,18 +13,23 @@ export interface FiltrosReporte {
   hasta?: string | undefined; // yyyy-MM-dd
   estado?: string | undefined; // se ignora en "actividad"
 }
-
 /**
- * CitaDTO.java NO venía en el zip: estos campos son una suposición.
- * Confirmar contra CitaDTO y ajustar (si ya existe en types/, importar ese).
- */
+
+/** CitaDTO */
 export interface CitaReporteDTO {
   idCita: number;
-  paciente: string | null;
-  procedimiento: string | null;
+  idPaciente: number;
+  nombrePaciente: string;
+  idPersonal: number;
+  nombrePersonal: string;
+  idProcedimiento: number | null;
+  nombreProcedimiento: string | null;
   fechaHora: string; // LocalDateTime
-  odontologo: string | null;
-  estado: string;
+  duracionMinutos: number;
+  estadoCita: string;
+  idMotivo: number | null;
+  nombreMotivo: string | null;
+  notas: string | null;
 }
 
 /** ReporteProcedimientoDTO */

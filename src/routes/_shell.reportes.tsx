@@ -24,6 +24,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { StatusBadge } from "@/components/common/StatusBadge";
 import { useGraficosReportes, useReporteTabular, type ConsultaReporte } from "@/hooks/useReportes";
 import { exportarCsv } from "@/lib/export-csv";
+import { filaCita } from "@/lib/reportes-citas";
 import { printTable } from "@/lib/print";
 import {
   DASH,
@@ -74,14 +75,7 @@ function construirPreview(reporte: ReporteTabular): Preview {
     case "citas":
       return {
         columns: ["Paciente", "Procedimiento", "Fecha", "Hora", "Odontólogo", "Estado"],
-        rows: reporte.filas.map((c) => [
-          c.paciente ?? DASH,
-          c.procedimiento ?? DASH,
-          formatFecha(c.fechaHora),
-          formatHora(c.fechaHora),
-          c.odontologo ?? DASH,
-          formatEstado(c.estado),
-        ]),
+        rows: reporte.filas.map(filaCita),
         estadoIndex: 5,
       };
     case "procedimientos":
@@ -154,6 +148,11 @@ function Reportes() {
     generar(nuevo, TODOS);
   };
 
+  const cambiarEstado = (nuevo: string) => {
+  setEstado(nuevo);
+  generar(tipo, nuevo); // aplica el filtro de inmediato
+  };
+
   const preview = useMemo(() => construirPreview(reporte), [reporte]);
   const tituloReporte = tipos.find((t) => t.id === reporte.tipo)!.label;
 
@@ -212,7 +211,7 @@ function Reportes() {
           </div>
           <div className="space-y-2">
             <Label>Estado</Label>
-            <Select value={estado} onValueChange={setEstado} disabled={sinFiltroEstado}>
+            <Select value={estado} onValueChange={cambiarEstado} disabled={sinFiltroEstado}>
               <SelectTrigger>
                 <SelectValue placeholder="Todos" />
               </SelectTrigger>
@@ -234,7 +233,7 @@ function Reportes() {
         </CardContent>
       </Card>
 
-      <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+      <div className="mt-6 grid gap-3 sm:grid-cols-3">
         {tipos.map((t) => (
           <Card
             key={t.id}
@@ -246,13 +245,13 @@ function Reportes() {
               tipo === t.id ? "ring-2 ring-primary" : ""
             }`}
           >
-            <CardContent className="flex items-start gap-4 p-5">
-              <div className="bg-gradient-primary grid h-11 w-11 shrink-0 place-items-center rounded-xl text-primary-foreground">
-                <t.icon className="h-5 w-5" />
+            <CardContent className="flex items-center gap-3 p-3">
+              <div className="bg-gradient-primary grid h-9 w-9 shrink-0 place-items-center rounded-lg text-primary-foreground">
+                <t.icon className="h-4 w-4" />
               </div>
               <div className="min-w-0">
-                <p className="font-medium">{t.label}</p>
-                <p className="mt-0.5 text-xs text-muted-foreground">{t.detalle}</p>
+                <p className="truncate text-sm font-medium">{t.label}</p>
+                <p className="truncate text-xs text-muted-foreground">{t.detalle}</p>
               </div>
             </CardContent>
           </Card>
@@ -390,7 +389,8 @@ function Reportes() {
             </Button>
           </div>
         </div>
-        <div className="max-h-[420px] overflow-x-auto overflow-y-auto">
+      {/* <div className="max-h-[420px] overflow-x-auto overflow-y-auto"> */}
+        <div className="max-h-105 overflow-x-auto overflow-y-auto">
           <Table>
             <TableHeader className="sticky top-0 z-10 bg-muted">
               <TableRow>
