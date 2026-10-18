@@ -1,231 +1,163 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
-import { Plus } from "lucide-react";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { useEffect, useState, type FormEvent } from "react";
+import { Eye, EyeOff, Loader2 } from "lucide-react";
 import { toast } from "sonner";
-import { PageHeader } from "@/components/layout/PageHeader";
-import { DataToolbar } from "@/components/common/DataToolbar";
-import { TablePagination } from "@/components/common/TablePagination";
-import { RowActions } from "@/components/common/RowActions";
-import { DetailDialog } from "@/components/common/DetailDialog";
-import { printRecord } from "@/lib/print";
-import { StatusBadge } from "@/components/common/StatusBadge";
+import { AuthLayout } from "@/components/layout/AuthLayout";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { roles, usuarios } from "@/lib/mock-data";
+import { authApi } from "@/lib/api/auth";
+import { estaAutenticado, guardarSesion, ultimoUsuarioId } from "@/lib/auth";
+import type { UsuarioLoginItem } from "@/types/auth";
 
 export const Route = createFileRoute("/login")({
   head: () => ({
     meta: [
-      { title: "Usuarios del sistema — ARCHES" },
-      { name: "description", content: "Gestión de usuarios, roles asignados y estado de las cuentas del sistema." },
-      { property: "og:title", content: "Usuarios del sistema — ARCHES" },
-      { property: "og:description", content: "Gestión de usuarios, roles asignados y estado de las cuentas." },
+      { title: "Iniciar sesión — ARCHES" },
+      { name: "description", content: "Acceso al sistema de gestión clínica ARCHES." },
     ],
   }),
-  component: Usuarios,
+  component: Login,
 });
 
-function Usuarios() {
-  const [open, setOpen] = useState(false);
-  const [detalle, setDetalle] = useState<(typeof usuarios)[number] | null>(null);
+function Login() {
+  const navigate = useNavigate();
+
+  const [usuarios, setUsuarios] = useState<UsuarioLoginItem[]>([]);
+  const [cargandoUsuarios, setCargandoUsuarios] = useState(true);
+  const [idUsuario, setIdUsuario] = useState("");
+  const [contrasena, setContrasena] = useState("");
+  const [mostrar, setMostrar] = useState(false);
+  const [recordarme, setRecordarme] = useState(false);
+  const [enviando, setEnviando] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (estaAutenticado()) {
+      void navigate({ to: "/dashboard" });
+      return;
+    }
+    const ac = new AbortController();
+    authApi
+      .usuariosLogin(ac.signal)
+      .then((lista) => {
+        setUsuarios(lista);
+        const ultimo = ultimoUsuarioId();
+        if (ultimo !== null && lista.some((u) => u.idUsuario === ultimo)) {
+          setIdUsuario(String(ultimo));
+          setRecordarme(true);
+        }
+      })
+      .catch((e: unknown) => {
+        if (ac.signal.aborted) return;
+        setError(e instanceof Error ? e.message : "No se pudo cargar la lista de usuarios");
+      })
+      .finally(() => {
+        if (!ac.signal.aborted) setCargandoUsuarios(false);
+      });
+    return () => ac.abort();
+  }, [navigate]);
+
+  async function onSubmit(e: FormEvent) {
+    e.preventDefault();
+    if (!idUsuario) {
+      setError("Seleccione su usuario");
+      return;
+    }
+    if (!contrasena) {
+      setError("Ingrese su contraseña");
+      return;
+    }
+    setEnviando(true);
+    setError(null);
+    try {
+      const r = await authApi.login({ idUsuario: Number(idUsuario), contrasena, recordarme });
+      guardarSesion(r, recordarme);
+      toast.success(`Bienvenido(a), ${r.usuario.nombreCompleto}`);
+      await navigate({ to: "/dashboard" });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "No se pudo iniciar sesión");
+      setContrasena("");
+    } finally {
+      setEnviando(false);
+    }
+  }
 
   return (
-    <>
-      <PageHeader
-        title="Usuarios"
-        description="Cuentas de acceso al sistema y roles asignados."
-        breadcrumbs={[{ label: "Usuarios" }]}
-        actions={
-          <Button onClick={() => setOpen(true)}>
-            <Plus className="h-4 w-4" /> Nuevo usuario
-          </Button>
-        }
-      />
-
-      <Card className="overflow-hidden border-border p-0 shadow-card">
-        <DataToolbar
-          placeholder="Buscar por nombre o correo..."
-          exportName="Usuarios del sistema"
-          exportColumns={["Nombre", "Correo", "Rol", "Estado", "Último acceso"]}
-          exportRows={usuarios.map((u) => [u.nombre, u.correo, u.rol, u.estado, u.ultimoAcceso])}
-        >
-
-          <Select>
-            <SelectTrigger className="w-48">
-              <SelectValue placeholder="Rol" />
+    <AuthLayout
+      title="Iniciar sesión"
+      subtitle="Seleccione su usuario e ingrese su contraseña."
+      footer={
+        <>
+          ¿No tiene cuenta?{" "}
+          <Link to="/registro" className="font-medium text-primary hover:underline">
+            Solicitar acceso
+          </Link>
+        </>
+      }
+    >
+      <form onSubmit={onSubmit} className="space-y-4" noValidate>
+        <div className="space-y-2">
+          <Label htmlFor="usuario">Usuario</Label>
+          <Select value={idUsuario} onValueChange={setIdUsuario} disabled={cargandoUsuarios || enviando}>
+            <SelectTrigger id="usuario">
+              <SelectValue placeholder={cargandoUsuarios ? "Cargando usuarios…" : "Seleccione su nombre"} />
             </SelectTrigger>
             <SelectContent>
-              {roles.map((r) => (
-                <SelectItem key={r} value={r}>
-                  {r}
+              {usuarios.map((u) => (
+                <SelectItem key={u.idUsuario} value={String(u.idUsuario)}>
+                  {u.nombreCompleto}
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
-          <Select>
-            <SelectTrigger className="w-40">
-              <SelectValue placeholder="Estado" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="activo">Activo</SelectItem>
-              <SelectItem value="inactivo">Inactivo</SelectItem>
-            </SelectContent>
-          </Select>
-        </DataToolbar>
-
-        <div className="overflow-x-auto">
-          <Table>
-            <TableHeader className="bg-muted/60">
-              <TableRow>
-                <TableHead className="w-10">
-                  <Checkbox />
-                </TableHead>
-                <TableHead>Nombre</TableHead>
-                <TableHead>Correo</TableHead>
-                <TableHead>Rol</TableHead>
-                <TableHead>Estado</TableHead>
-                <TableHead>Último acceso</TableHead>
-                <TableHead className="text-right">Acciones</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {usuarios.map((u, i) => (
-                <TableRow key={u.id} className={i % 2 ? "bg-muted/25" : undefined}>
-                  <TableCell>
-                    <Checkbox />
-                  </TableCell>
-                  <TableCell className="font-medium">{u.nombre}</TableCell>
-                  <TableCell className="text-muted-foreground">{u.correo}</TableCell>
-                  <TableCell>{u.rol}</TableCell>
-                  <TableCell>
-                    <StatusBadge estado={u.estado} />
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">{u.ultimoAcceso}</TableCell>
-                  <TableCell>
-                    <RowActions
-                      label={u.nombre}
-                      onView={() => setDetalle(u)}
-                      onEdit={() => setOpen(true)}
-                      onPrint={() =>
-                        printRecord(u.nombre, [
-                          { label: "Usuario", value: u.id },
-                          { label: "Correo", value: u.correo },
-                          { label: "Rol", value: u.rol },
-                          { label: "Estado", value: u.estado },
-                          { label: "Último acceso", value: u.ultimoAcceso },
-                        ])
-                      }
-                    />
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
         </div>
-        <TablePagination total={usuarios.length} />
-      </Card>
 
-      <DetailDialog
-        open={!!detalle}
-        onOpenChange={(v) => !v && setDetalle(null)}
-        title={detalle?.nombre ?? ""}
-        subtitle={detalle ? `${detalle.rol} · ${detalle.id}` : undefined}
-        badge={detalle ? <StatusBadge estado={detalle.estado} /> : undefined}
-        fields={
-          detalle
-            ? [
-                { label: "Código de usuario", value: detalle.id },
-                { label: "Rol asignado", value: detalle.rol },
-                { label: "Correo institucional", value: detalle.correo },
-                { label: "Estado", value: detalle.estado },
-                { label: "Último acceso", value: detalle.ultimoAcceso },
-                { label: "Autenticación", value: "Usuario y contraseña" },
-              ]
-            : []
-        }
-      />
-
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
-          <DialogHeader>
-            <DialogTitle>Registro de usuario</DialogTitle>
-            <DialogDescription>Los campos con * son obligatorios.</DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-5">
-            <div className="space-y-4">
-              <h3 className="border-b border-border pb-2 text-sm font-semibold text-primary-dark">Datos personales</h3>
-              <div className="space-y-2">
-                <Label>
-                  Nombre completo <span className="text-destructive">*</span>
-                </Label>
-                <Input placeholder="Nombres y apellidos" />
-              </div>
-              <div className="space-y-2">
-                <Label>
-                  Correo electrónico <span className="text-destructive">*</span>
-                </Label>
-                <Input type="email" placeholder="usuario@arches.ni" className="border-destructive" />
-                <p className="text-xs text-destructive">Ya existe un usuario con este correo</p>
-              </div>
-              <div className="space-y-2">
-                <Label>Teléfono</Label>
-                <Input placeholder="8888-0000" />
-              </div>
-            </div>
-
-            <div className="space-y-4">
-              <h3 className="border-b border-border pb-2 text-sm font-semibold text-primary-dark">Acceso</h3>
-              <div className="space-y-2">
-                <Label>
-                  Contraseña temporal <span className="text-destructive">*</span>
-                </Label>
-                <Input type="password" defaultValue="temporal2026" />
-              </div>
-              <div className="space-y-2">
-                <Label>
-                  Rol asignado <span className="text-destructive">*</span>
-                </Label>
-                <Select>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Seleccione un rol" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {roles.map((r) => (
-                      <SelectItem key={r} value={r}>
-                        {r}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <label className="flex items-center gap-2.5 text-sm">
-                <Checkbox defaultChecked /> Usuario activo
-              </label>
-            </div>
-          </div>
-
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setOpen(false)}>
-              Cancelar
-            </Button>
-            <Button
-              onClick={() => {
-                setOpen(false);
-                toast.success("Usuario creado correctamente");
-              }}
+        <div className="space-y-2">
+          <Label htmlFor="contrasena">Contraseña</Label>
+          <div className="relative">
+            <Input
+              id="contrasena"
+              type={mostrar ? "text" : "password"}
+              autoComplete="current-password"
+              value={contrasena}
+              onChange={(e) => setContrasena(e.target.value)}
+              disabled={enviando}
+              className="pr-10"
+            />
+            <button
+              type="button"
+              onClick={() => setMostrar((v) => !v)}
+              aria-label={mostrar ? "Ocultar contraseña" : "Mostrar contraseña"}
+              className="absolute inset-y-0 right-0 grid w-10 place-items-center text-muted-foreground hover:text-foreground"
             >
-              Guardar
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </>
+              {mostrar ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            </button>
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between gap-3">
+          <label className="flex cursor-pointer items-center gap-2 text-sm">
+            <Checkbox checked={recordarme} onCheckedChange={(v) => setRecordarme(v === true)} />
+            Recordarme
+          </label>
+          <Link to="/recuperar" className="text-sm font-medium text-primary hover:underline">
+            ¿Olvidó su contraseña?
+          </Link>
+        </div>
+
+        {error && (
+          <p role="alert" className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+            {error}
+          </p>
+        )}
+
+        <Button type="submit" className="w-full" disabled={enviando || cargandoUsuarios}>
+          {enviando && <Loader2 className="h-4 w-4 animate-spin" />} Ingresar
+        </Button>
+      </form>
+    </AuthLayout>
   );
 }

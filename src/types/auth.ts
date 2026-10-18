@@ -1,25 +1,38 @@
-// src/types/auth.ts
+/** Contratos de AuthController (/api/auth). El combo de roles reutiliza RolDTO de "@/types/rol". */
 
-import type { PermisoModuloDTO } from "@/types/rol";
-
-export interface LoginInput {
-  correo: string;
-  contrasena: string;
+export interface UsuarioLoginItem {
+  idUsuario: number;
+  nombreCompleto: string;
 }
 
-/** Usuario autenticado con su matriz de permisos (todos los módulos del sistema). */
-export interface UsuarioSesionDTO {
+export interface LoginInput {
+  idUsuario: number;
+  contrasena: string;
+  recordarme: boolean;
+}
+
+export interface UsuarioSesion {
   idUsuario: number;
   nombreCompleto: string;
   correo: string;
   idRol: number;
   nombreRol: string;
-  permisos: PermisoModuloDTO[];
 }
 
-export interface LoginResponseDTO {
+export interface LoginResponse {
   token: string;
-  tipo: string;
-  expiraEnSegundos: number;
-  usuario: UsuarioSesionDTO;
+  expiraEn: string; // ISO-8601 (Instant)
+  usuario: UsuarioSesion;
+}
+
+export interface RegistroInput {
+  nombreCompleto: string;
+  correo: string;
+  telefono: string | null;
+  idRol: number;
+  contrasena: string;
+}
+
+export interface MensajeDTO {
+  message: string;
 }

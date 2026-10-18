@@ -1,19 +1,16 @@
 // Cliente HTTP mínimo para consumir la API de Spring Boot.
-// No había uno centralizado en el proyecto, así que este es el punto único
-// de configuración (base URL, headers, manejo de errores).
-// Cambiar la url en dependencia en que ambiente se esta probando ya sea en local o produccion.
-//---------------------------------------------------------------------------------------//
-// Url para probar en LOCALHOST
-/*const VITE_API_BASE_URL = (
-  import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8081"
-).replace(/\/+$/, "");*/
-//---------------------------------------------------------------------------------------//
-// Url para probar en PRODUCCION
-const VITE_API_BASE_URL = (
-  import.meta.env.VITE_API_BASE_URL ?? "https://back-arches.onrender.com"
+// Punto único de configuración: base URL, token de sesión, headers y manejo de errores.
+//
+// La URL se toma de VITE_API_BASE_URL (.env.local o variables de Vercel). Si no está definida:
+//   - en desarrollo (npm run dev)  -> http://localhost:8081
+//   - en producción (build)        -> https://back-arches.onrender.com
+import { cerrarSesion, getToken } from "@/lib/auth";
+
+const API_BASE_URL = (
+  import.meta.env.VITE_API_BASE_URL ??
+  (import.meta.env.DEV ? "http://localhost:8081" : "https://back-arches.onrender.com" )
 ).replace(/\/+$/, "");
 
-//---------------------------------------------------------------------------------------//
 export class ApiError extends Error {
   status: number;
   constructor(status: number, message: string) {
@@ -32,18 +29,34 @@ async function parseErrorMessage(response: Response): Promise<string> {
   }
 }
 
+function authHeader(): Record<string, string> {
+  const token = getToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+/** 401 con sesión guardada = token vencido o inválido: se limpia y se vuelve al login. */
+async function fallar(response: Response, conToken: boolean): Promise<never> {
+  if (response.status === 401 && conToken) {
+    cerrarSesion();
+    if (window.location.pathname !== "/login") window.location.assign("/login");
+  }
+  throw new ApiError(response.status, await parseErrorMessage(response));
+}
+
 /** Para endpoints que devuelven JSON (o 204 sin body). */
 export async function apiRequest<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const response = await fetch(`${VITE_API_BASE_URL}${path}`, {
+  const auth = authHeader();
+  const response = await fetch(`${API_BASE_URL}${path}`, {
     ...options,
     headers: {
       "Content-Type": "application/json",
+      ...auth,
       ...options.headers,
     },
   });
 
   if (!response.ok) {
-    throw new ApiError(response.status, await parseErrorMessage(response));
+    return fallar(response, "Authorization" in auth);
   }
 
   if (response.status === 204) {
@@ -55,9 +68,16 @@ export async function apiRequest<T>(path: string, options: RequestInit = {}): Pr
 
 /** Para endpoints que devuelven un archivo binario (Excel, PDF). */
 export async function apiRequestBlob(path: string, options: RequestInit = {}): Promise<Blob> {
-  const response = await fetch(`${VITE_API_BASE_URL}${path}`, options);
+  const auth = authHeader();
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    ...options,
+    headers: {
+      ...auth,
+      ...options.headers,
+    },
+  });
   if (!response.ok) {
-    throw new ApiError(response.status, await parseErrorMessage(response));
+    return fallar(response, "Authorization" in auth);
   }
   return response.blob();
 }
