@@ -25,32 +25,34 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from "@/components/ui/sidebar";
+import { puede } from "@/lib/permisos";
 
+/** modulo = nombre en modulos_sistema; null = visible para cualquier usuario con sesión. */
 const grupos = [
   {
     label: "Operación diaria",
     items: [
-      { title: "Dashboard", url: "/dashboard", icon: LayoutDashboard },
-      { title: "Pacientes", url: "/pacientes", icon: Users },
-      { title: "Agenda y Citas", url: "/citas", icon: CalendarDays },
-      { title: "Expediente Clínico", url: "/expedientes", icon: FileHeart },
+      { title: "Dashboard", url: "/dashboard", icon: LayoutDashboard, modulo: null },
+      { title: "Pacientes", url: "/pacientes", icon: Users, modulo: "Pacientes" },
+      { title: "Agenda y Citas", url: "/citas", icon: CalendarDays, modulo: "Agenda y Citas" },
+      { title: "Expediente Clínico", url: "/expedientes", icon: FileHeart, modulo: "Expediente Clínico" },
     ],
   },
   {
     label: "Clínica",
     items: [
-      { title: "Procedimientos", url: "/procedimientos", icon: Stethoscope },
-      { title: "Tratamientos", url: "/tratamientos", icon: ClipboardList },
-      { title: "Personal", url: "/personal", icon: IdCard },
+      { title: "Procedimientos", url: "/procedimientos", icon: Stethoscope, modulo: "Procedimientos" },
+      { title: "Tratamientos", url: "/tratamientos", icon: ClipboardList, modulo: "Procedimientos" },
+      { title: "Personal", url: "/personal", icon: IdCard, modulo: "Configuración" },
     ],
   },
   {
     label: "Administración",
     items: [
-      { title: "Reportes", url: "/reportes", icon: BarChart3 },
-      { title: "Usuarios", url: "/usuarios", icon: UserCog },
-      { title: "Roles y Permisos", url: "/roles", icon: ShieldCheck },
-      { title: "Configuración", url: "/configuracion", icon: Settings },
+      { title: "Reportes", url: "/reportes", icon: BarChart3, modulo: "Reportes" },
+      { title: "Usuarios", url: "/usuarios", icon: UserCog, modulo: "Usuarios" },
+      { title: "Roles y Permisos", url: "/roles", icon: ShieldCheck, modulo: "Roles y Permisos" },
+      { title: "Configuración", url: "/configuracion", icon: Settings, modulo: "Configuración" },
     ],
   },
 ];
@@ -59,6 +61,11 @@ export function AppSidebar() {
   const { state } = useSidebar();
   const collapsed = state === "collapsed";
   const pathname = useRouterState({ select: (r) => r.location.pathname });
+
+  // Solo los módulos que el rol del usuario puede ver; los grupos que quedan vacíos no se muestran.
+  const visibles = grupos
+    .map((g) => ({ ...g, items: g.items.filter((i) => i.modulo === null || puede(i.modulo)) }))
+    .filter((g) => g.items.length > 0);
 
   return (
     <Sidebar collapsible="icon" className="border-r border-sidebar-border">
@@ -77,7 +84,7 @@ export function AppSidebar() {
       </SidebarHeader>
 
       <SidebarContent className="pt-2">
-        {grupos.map((grupo) => (
+        {visibles.map((grupo) => (
           <SidebarGroup key={grupo.label}>
             {!collapsed && (
               <SidebarGroupLabel className="text-[11px] tracking-wide uppercase">{grupo.label}</SidebarGroupLabel>

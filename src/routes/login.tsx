@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { authApi } from "@/lib/api/auth";
-import { estaAutenticado, guardarSesion, ultimoUsuarioId } from "@/lib/auth";
+import { debeCambiarContrasena, estaAutenticado, guardarSesion, ultimoUsuarioId } from "@/lib/auth";
 import type { UsuarioLoginItem } from "@/types/auth";
 
 export const Route = createFileRoute("/login")({
@@ -36,7 +36,7 @@ function Login() {
 
   useEffect(() => {
     if (estaAutenticado()) {
-      void navigate({ to: "/dashboard" });
+      void navigate({ to: debeCambiarContrasena() ? "/cambiar-contrasena" : "/dashboard" });
       return;
     }
     const ac = new AbortController();
@@ -75,6 +75,11 @@ function Login() {
     try {
       const r = await authApi.login({ idUsuario: Number(idUsuario), contrasena, recordarme });
       guardarSesion(r, recordarme);
+      if (r.debeCambiarContrasena) {
+        toast.info("Su contraseña es temporal: debe cambiarla para continuar");
+        await navigate({ to: "/cambiar-contrasena" });
+        return;
+      }
       toast.success(`Bienvenido(a), ${r.usuario.nombreCompleto}`);
       await navigate({ to: "/dashboard" });
     } catch (err) {

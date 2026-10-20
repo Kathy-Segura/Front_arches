@@ -1,14 +1,18 @@
-import type { LoginResponse, UsuarioSesion } from "@/types/auth";
+import type { PermisoModuloDTO } from "@/types/rol";
+import type { LoginResponse, SesionDTO, UsuarioSesion } from "@/types/auth";
 
 /**
  * Sesión en el navegador.
  * - "Recordarme" marcado  -> localStorage (sobrevive al cerrar el navegador) y se recuerda el último usuario del combo.
  * - Sin marcar            -> sessionStorage (se pierde al cerrar la pestaña).
- * Nunca se guarda la contraseña.
+ * Nunca se guarda la contraseña. Los permisos guardados solo sirven para mostrar u ocultar opciones:
+ * la protección real está en el back, que los vuelve a comprobar en cada petición.
  */
 const K_TOKEN = "arches.token";
 const K_EXPIRA = "arches.expira";
 const K_USUARIO = "arches.usuario";
+const K_PERMISOS = "arches.permisos";
+const K_DEBE_CAMBIAR = "arches.debeCambiar";
 const K_ULTIMO = "arches.ultimoUsuario";
 
 function almacenes(): Storage[] {
@@ -21,9 +25,7 @@ function almacenes(): Storage[] {
 
 function limpiarSesion(): void {
   for (const s of almacenes()) {
-    s.removeItem(K_TOKEN);
-    s.removeItem(K_EXPIRA);
-    s.removeItem(K_USUARIO);
+    for (const k of [K_TOKEN, K_EXPIRA, K_USUARIO, K_PERMISOS, K_DEBE_CAMBIAR]) s.removeItem(k);
   }
 }
 
@@ -34,6 +36,8 @@ export function guardarSesion(r: LoginResponse, recordar: boolean): void {
     s.setItem(K_TOKEN, r.token);
     s.setItem(K_EXPIRA, r.expiraEn);
     s.setItem(K_USUARIO, JSON.stringify(r.usuario));
+    s.setItem(K_PERMISOS, JSON.stringify(r.permisos));
+    s.setItem(K_DEBE_CAMBIAR, r.debeCambiarContrasena ? "1" : "0");
     if (recordar) localStorage.setItem(K_ULTIMO, String(r.usuario.idUsuario));
     else localStorage.removeItem(K_ULTIMO);
   } catch {
@@ -47,6 +51,11 @@ function leer(clave: string): string | null {
     if (v) return v;
   }
   return null;
+}
+
+/** El almacén donde está guardado el token (para actualizar la sesión en el mismo lugar). */
+function almacenDeSesion(): Storage | null {
+  return almacenes().find((s) => s.getItem(K_TOKEN)) ?? null;
 }
 
 /** Token vigente, o null (si venció, limpia la sesión). Úsalo en el header Authorization de tu clase http. */
@@ -72,6 +81,41 @@ export function usuarioActual(): UsuarioSesion | null {
     return JSON.parse(raw) as UsuarioSesion;
   } catch {
     return null;
+  }
+}
+
+export function permisosActuales(): PermisoModuloDTO[] {
+  const raw = leer(K_PERMISOS);
+  if (!raw) return [];
+  try {
+    return JSON.parse(raw) as PermisoModuloDTO[];
+  } catch {
+    return [];
+  }
+}
+
+export function debeCambiarContrasena(): boolean {
+  return leer(K_DEBE_CAMBIAR) === "1";
+}
+
+/** Refresca permisos y bandera con lo que responde GET /api/auth/me (cambios hechos por un administrador). */
+export function actualizarSesion(s: SesionDTO): void {
+  const almacen = almacenDeSesion();
+  if (!almacen) return;
+  try {
+    almacen.setItem(K_USUARIO, JSON.stringify(s.usuario));
+    almacen.setItem(K_PERMISOS, JSON.stringify(s.permisos));
+    almacen.setItem(K_DEBE_CAMBIAR, s.debeCambiarContrasena ? "1" : "0");
+  } catch {
+    /* sin espacio o bloqueado: se conserva lo anterior */
+  }
+}
+
+export function marcarContrasenaCambiada(): void {
+  try {
+    almacenDeSesion()?.setItem(K_DEBE_CAMBIAR, "0");
+  } catch {
+    /* ignorar */
   }
 }
 

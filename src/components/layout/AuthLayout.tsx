@@ -22,7 +22,7 @@ export function AuthLayout({ title, subtitle, children, footer }: AuthLayoutProp
         <div className="space-y-3">
           <h2 className="text-3xl font-semibold leading-tight">Sistema de gestión clínica odontológica</h2>
           <p className="max-w-md text-primary-foreground/80">
-            Pacientes, citas, expedientes y tratamientos en un solo lugar.
+            Pacientes, citas, expedientes y tratamientos.
           </p>
         </div>
         <p className="text-xs text-primary-foreground/70">© {new Date().getFullYear()} ARCHES</p>

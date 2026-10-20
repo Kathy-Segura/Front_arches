@@ -1,10 +1,12 @@
 import { apiRequest } from "@/lib/api/http"; // ajusta la ruta si tu archivo http tiene otro nombre
 import type { RolDTO } from "@/types/rol";
 import type {
+  CambiarContrasenaInput,
   LoginInput,
   LoginResponse,
   MensajeDTO,
   RegistroInput,
+  SesionDTO,
   UsuarioLoginItem,
   UsuarioSesion,
 } from "@/types/auth";
@@ -24,5 +26,7 @@ export const authApi = {
   recuperar: (correo: string) => post<MensajeDTO>("/recuperar", { correo }),
   restablecer: (token: string, contrasenaNueva: string) =>
     post<MensajeDTO>("/restablecer", { token, contrasenaNueva }),
-  me: () => apiRequest<UsuarioSesion>("/api/auth/me"),
+  /** Sesión actual con permisos frescos. */
+  me: () => apiRequest<SesionDTO>("/api/auth/me"),
+  cambiarContrasena: (input: CambiarContrasenaInput) => post<MensajeDTO>("/cambiar-contrasena", input),
 };
