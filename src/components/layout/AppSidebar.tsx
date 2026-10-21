@@ -114,8 +114,8 @@ export function AppSidebar() {
       {!collapsed && (
         <SidebarFooter className="border-t border-sidebar-border p-4">
           <div className="rounded-xl bg-primary-soft p-3">
-            <p className="text-xs font-medium text-primary-dark">Clínica Chinandega</p>
-            <p className="mt-0.5 text-[11px] text-muted-foreground">Versión 1.0 · Prototipo de tesis</p>
+            <p className="text-xs font-medium text-primary-dark">Clínica arches</p>
+            <p className="mt-0.5 text-[11px] text-muted-foreground">Versión 1.0</p>
           </div>
         </SidebarFooter>
       )}
